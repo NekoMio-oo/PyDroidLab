@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      纯 Compose 应用：XML 主题只负责窗口装饰，颜色与排版全部由
+      Compose Material 3（PyDroidLabTheme）接管。
+      继承 android:Theme.Material.Light.NoActionBar，避免引入
+      com.google.android.material 依赖。
+    -->
+    <style name="Theme.PyDroidLab" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 可对外暴露的目录。
+  项目目录位于 getExternalFilesDir(null)/projects，
+  控制台输出写在同一个项目目录下，备份 zip 也在外部私有目录。
+  两者都由 external-files-path 覆盖；internal 与 cache 一并放开以防将来用到。
+-->
+<paths>
+    <files-path name="internal_files" path="." />
+    <external-files-path name="external_files" path="." />
+    <cache-path name="cache_files" path="." />
+</paths>
