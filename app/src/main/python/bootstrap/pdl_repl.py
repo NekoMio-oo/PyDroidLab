@@ -31,7 +31,10 @@ class Repl:
         self._buffer.append(line)
         source = "\n".join(self._buffer)
         try:
-            compiled = codeop.compile_command(source, symbol="exec")
+            # symbol="single"：让顶层表达式语句在 exec 时走 sys.displayhook，
+            # 像原生 REPL 一样回显 repr（Bug 6）。def/class 等语句不受影响，
+            # 多行块的不完整判断（返回 None）行为也不变。
+            compiled = codeop.compile_command(source, symbol="single")
         except (SyntaxError, OverflowError, ValueError):
             self._buffer = []
             traceback.print_exc()

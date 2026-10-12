@@ -36,25 +36,31 @@ class PythonRunner(context: Context) {
         if (running) return
         HostBridge.resetStdin()
         running = true
+        val startedAt = System.currentTimeMillis()
         EventBus.emitStdout("▶ Running ${config.path}\n")
         runJob = scope.launch(Dispatchers.IO) {
-            val code = try {
-                val py = Python.getInstance()
-                val runner = py.getModule("pdl_runner")
-                runner.callAttr(
-                    "run_script",
-                    config.path,
-                    config.argv.toTypedArray(),
-                    config.cwd,
-                    config.env,
-                    config.stdinPreset.ifEmpty { null }
-                ).toInt()
-            } catch (t: Throwable) {
-                EventBus.emitStderr("Runner error: ${t.message}\n")
-                -1
+            var code = -1
+            try {
+                code = try {
+                    val py = Python.getInstance()
+                    val runner = py.getModule("pdl_runner")
+                    runner.callAttr(
+                        "run_script",
+                        config.path,
+                        config.argv.toTypedArray(),
+                        config.cwd,
+                        config.env,
+                        config.stdinPreset.ifEmpty { null }
+                    ).toInt()
+                } catch (t: Throwable) {
+                    EventBus.emitStderr("Runner error: ${t.message}\n")
+                    -1
+                }
             } finally {
                 running = false
-                EventBus.emitStdout("\n■ Process finished\n")
+                // Bug 4：结束行带退出码与耗时（方法签名不变，信息通过控制台文本传出）。
+                val secs = (System.currentTimeMillis() - startedAt) / 1000.0
+                EventBus.emitStdout("\n■ 进程结束 · 退出码 $code · 用时 %.1fs\n".format(secs))
             }
             onDone(code)
         }

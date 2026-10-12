@@ -10,7 +10,7 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 版本 | **1.1.1**（`versionCode = 3`） |
+| 版本 | **1.1.2**（`versionCode = 4`） |
 | 应用 ID | `com.pydroidlab.app` |
 | Python | 3.11（Chaquopy 15.0.1） |
 | minSdk / targetSdk | 26 / 34 |
@@ -355,6 +355,19 @@ Android wheel，合计数百 MB，只能通过「软件包」页在运行时按�
 ---
 
 ## 8. 更新日志
+
+### v1.1.2 —— 2026-10-13（`versionCode = 4`）
+
+Phase 0：修复 7 个真机 bug（详见 FEATURES.md 的 Phase 0 记录表）。
+
+| Bug | 修复 |
+| --- | --- |
+| 补全/高亮不可见 | 分析线程 try/catch 加固（logcat TAG `PdlEditor`）+「输入法联想时仍显示补全」开关 + 设置页「编辑器诊断」面板 |
+| 未命名文件不能直接运行/保存 | 自动落盘 `filesDir/scratch/`，标签显示「未命名-N（临时）」，全程不弹窗 |
+| 控制台无视觉区分 | `ConsoleLine` 按 kind 分色；结束行带退出码与耗时（`PythonRunner` 公开签名未变） |
+| 终端字体巨大 | jackpal `setTextSize` 参数是 dp，删掉多余的 density 乘法（factory/update 两处） |
+| REPL 无回显 | `compile_command` 改 `symbol="single"`，表达式按原生 REPL 回显 |
+| 括号配对无脑 | 引号避让单词字符（`SymbolPairEx`）+ 右括号 skip-over（内容事件拦截）+ 符号栏统一走 `commitText` |
 
 ### v1.1.1 —— 2026-10-12（`versionCode = 3`）
 

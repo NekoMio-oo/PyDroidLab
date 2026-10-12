@@ -76,6 +76,44 @@ fun CodeEditorView(
                     }
                 }
 
+                // Bug 7.1：输入右括号/引号时若光标右侧已是同一字符 → skip over。
+                // sora 0.23.6 的 SymbolPairEx 只能决定"配不配对"，做不到"跳过"，
+                // 所以在这里监听插入事件：把刚插入的字符删掉、光标右移一位，
+                // 效果与"跨过已有括号"一致。SymbolBar 与键盘输入都走 commitText，
+                // 因此两条路径自动共享这一行为，不会双重处理。
+                val skipGuard = arrayOf(false)
+                subscribeEvent(ContentChangeEvent::class.java) { event, _ ->
+                    if (skipGuard[0]) return@subscribeEvent
+                    try {
+                        if (event.action != ContentChangeEvent.ACTION_INSERT) {
+                            return@subscribeEvent
+                        }
+                        val inserted = event.changedText.toString()
+                        if (inserted.length != 1 || inserted[0] !in SKIP_OVER_CLOSERS) {
+                            return@subscribeEvent
+                        }
+                        val start = event.changeStart
+                        val content = text
+                        val rightIdx = start.index + 1
+                        // 注意：Content.charAt 有 (index) 与 (line, column) 两个
+                        // 重载，Kotlin 显式调用会撞上重载歧义；用 get 约定（[]）
+                        // 走 CharSequence.get(int) 则没有歧义。
+                        val rightChar: Char =
+                            if (rightIdx < content.length) content[rightIdx] else '\u0000'
+                        if (rightChar != inserted[0]) {
+                            return@subscribeEvent
+                        }
+                        skipGuard[0] = true
+                        try {
+                            content.delete(start.index, rightIdx)
+                            setSelection(start.line, start.column + 1)
+                        } finally {
+                            skipGuard[0] = false
+                        }
+                    } catch (_: Throwable) {
+                    }
+                }
+
                 // 光标 / 选区变化 -> 同步到 tab 与 UI 状态栏
                 subscribeEvent(SelectionChangeEvent::class.java) { _, _ ->
                     try {
@@ -141,6 +179,9 @@ fun CodeEditorView(
     )
 }
 
+/** 输入这些右符号时若光标右侧已是同一字符，则 skip over（Bug 7.1）。 */
+private val SKIP_OVER_CLOSERS = charArrayOf(')', ']', '}', '"', '\'')
+
 private fun CodeEditor.applySettings(s: EditorSettings) {
     // NOTE: sora-editor exposes `setTextSize(float)` / `getTextSizePx()` but no
     // `getTextSize()`, so Kotlin cannot synthesise a `textSize` property here.
@@ -156,6 +197,8 @@ private fun CodeEditor.applySettings(s: EditorSettings) {
     props.apply {
         symbolPairAutoCompletion = s.autoPair
         autoIndent = s.autoIndent
+        // Bug 1/2：中文输入法联想（composing）期间的补全开关，默认保持开启。
+        autoCompletionOnComposing = s.imeCompletions
     }
 }
 

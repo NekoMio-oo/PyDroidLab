@@ -32,6 +32,9 @@ data class EditorSettings(
     val showLineNumbers: Boolean = true,
     val autoIndent: Boolean = true,
     val autoPair: Boolean = true,
+    // Bug 1/2：中文输入法联想（composing）期间 sora 默认会抑制补全弹窗；
+    // 该开关映射 props.autoCompletionOnComposing，默认保持补全可见。
+    val imeCompletions: Boolean = true,
     val formatOnSave: Boolean = false,
     val colorScheme: EditorColorScheme = EditorColorScheme.DARCULA
 )
@@ -71,6 +74,7 @@ class SettingsRepository(private val context: Context) {
         val LINENO = booleanPreferencesKey("line_numbers")
         val AUTO_INDENT = booleanPreferencesKey("auto_indent")
         val AUTO_PAIR = booleanPreferencesKey("auto_pair")
+        val IME_COMPLETIONS = booleanPreferencesKey("ime_completions")
         val FORMAT_SAVE = booleanPreferencesKey("format_on_save")
         val SCHEME = stringPreferencesKey("color_scheme")
         val SHORTCUTS = stringPreferencesKey("shortcuts_json")
@@ -85,6 +89,7 @@ class SettingsRepository(private val context: Context) {
             showLineNumbers = p[K.LINENO] ?: true,
             autoIndent = p[K.AUTO_INDENT] ?: true,
             autoPair = p[K.AUTO_PAIR] ?: true,
+            imeCompletions = p[K.IME_COMPLETIONS] ?: true,
             formatOnSave = p[K.FORMAT_SAVE] ?: false,
             colorScheme = EditorColorScheme.values().find { it.name == p[K.SCHEME] } ?: EditorColorScheme.DARCULA
         )
@@ -108,6 +113,7 @@ class SettingsRepository(private val context: Context) {
         it[K.LINENO] = e.showLineNumbers
         it[K.AUTO_INDENT] = e.autoIndent
         it[K.AUTO_PAIR] = e.autoPair
+        it[K.IME_COMPLETIONS] = e.imeCompletions
         it[K.FORMAT_SAVE] = e.formatOnSave
         it[K.SCHEME] = e.colorScheme.name
     }

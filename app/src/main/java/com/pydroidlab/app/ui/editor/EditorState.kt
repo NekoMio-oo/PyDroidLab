@@ -7,7 +7,9 @@ import java.io.File
 /** One open editing tab. */
 class EditorTab(
     val id: String,
-    val file: File?,
+    // var：未命名标签页点「运行/保存」时会自动落到 scratch 目录（Bug 3），
+    // 此刻需要把 tab 绑定到落盘文件；「另存为」也走同一条绑定路径。
+    var file: File?,
     var title: String
 ) {
     var content: Content = Content()

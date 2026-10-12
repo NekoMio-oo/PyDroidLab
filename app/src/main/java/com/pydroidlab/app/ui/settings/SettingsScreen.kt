@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.pydroidlab.app.BuildConfig
 import com.pydroidlab.app.python.PipMirror
 import com.pydroidlab.app.ui.AppViewModel
+import com.pydroidlab.app.ui.KeyValueRow
 import com.pydroidlab.app.ui.SectionCard
 import kotlinx.coroutines.launch
 import java.io.File
@@ -68,6 +69,7 @@ fun SettingsScreen(vm: AppViewModel) {
     var lineHeight by remember(editor.lineHeightMultiplier) { mutableStateOf(editor.lineHeightMultiplier) }
     var newSymbol by remember { mutableStateOf("") }
     var showExport by remember { mutableStateOf(false) }
+    var showDiagnostics by remember { mutableStateOf(false) }
     var showImport by remember { mutableStateOf(false) }
     var exportText by remember { mutableStateOf("") }
     var importText by remember { mutableStateOf("") }
@@ -159,6 +161,10 @@ fun SettingsScreen(vm: AppViewModel) {
             SwitchRow("显示行号", editor.showLineNumbers) { v -> commit { it.copy(showLineNumbers = v) } }
             SwitchRow("自动缩进", editor.autoIndent) { v -> commit { it.copy(autoIndent = v) } }
             SwitchRow("括号/引号自动配对", editor.autoPair) { v -> commit { it.copy(autoPair = v) } }
+            // Bug 1/2：中文输入法联想期间 sora 默认抑制补全弹窗；默认改为保持显示。
+            SwitchRow("输入法联想时仍显示补全", editor.imeCompletions) { v ->
+                commit { it.copy(imeCompletions = v) }
+            }
             SwitchRow("保存时用 black 格式化", editor.formatOnSave) { v ->
                 commit { it.copy(formatOnSave = v) }
             }
@@ -392,6 +398,18 @@ fun SettingsScreen(vm: AppViewModel) {
             )
         }
 
+        // --------------------------------------------- 编辑器诊断（Bug 1/2）
+        SectionCard(title = "诊断") {
+            TextButton(onClick = { showDiagnostics = true }) {
+                Text("编辑器诊断")
+            }
+            Text(
+                text = "补全 / 高亮不工作时，从这里查看语言挂载与最近一次分析的状态。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         SectionCard(title = "关于") {
             // 版本号从 BuildConfig 读取，避免升级时忘记同步这里的硬编码文案。
             val version = BuildConfig.VERSION_NAME
@@ -405,8 +423,42 @@ fun SettingsScreen(vm: AppViewModel) {
         }
     }
 
-    if (showExport) {
-        JsonDialog(
+    if (showDiagnostics) {
+        val diag = vm.editorDiagnostics
+        val timeText = remember(diag.lastAnalyzeAtMs) {
+            java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+                .format(java.util.Date(diag.lastAnalyzeAtMs))
+        }
+        AlertDialog(
+            onDismissRequest = { showDiagnostics = false },
+            confirmButton = {
+                TextButton(onClick = { showDiagnostics = false }) { Text("关闭") }
+            },
+            title = { Text("编辑器诊断") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    KeyValueRow("语言已挂载", if (diag.languageSeen) "是" else "否（还没有编辑器运行过分析）")
+                    KeyValueRow(
+                        "最近一次分析",
+                        if (diag.lastAnalyzeOk) "成功 · $timeText" else "失败 · $timeText"
+                    )
+                    diag.lastAnalyzeError?.let {
+                        KeyValueRow("失败原因", it.take(180))
+                    }
+                    KeyValueRow("输入「pri」的候选数", "${vm.diagnosticCandidateCount("pri")}")
+                    Text(
+                        text = "候选数 > 0 说明补全数据链路正常；若输入时弹窗仍不出现，" +
+                            "请确认上方「输入法联想时仍显示补全」已开启，" +
+                            "并检查中文输入法是否处于联想（composing）状态。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        )
+    }
+
+    if (showExport) {        JsonDialog(
             title = "设置 JSON（可复制）",
             value = exportText,
             readOnly = true,

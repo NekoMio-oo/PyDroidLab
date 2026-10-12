@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.pydroidlab.app.ui.AppViewModel
+import com.pydroidlab.app.ui.ConsoleKind
 import com.pydroidlab.app.ui.shareFile
 import com.pydroidlab.app.ui.shareText
 import com.pydroidlab.app.ui.theme.MonoFontFamily
@@ -144,10 +145,13 @@ fun ConsoleScreen(vm: AppViewModel) {
                     Text(
                         text = line.text.ifEmpty { " " },
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = MonoFontFamily),
-                        color = if (line.isError) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
+                        // Bug 4：按行的种类分色 —— 运行横幅 primary、
+                        // stderr error、结束行弱化、stdout 常规。
+                        color = when (line.kind) {
+                            ConsoleKind.HEADER -> MaterialTheme.colorScheme.primary
+                            ConsoleKind.FOOTER -> MaterialTheme.colorScheme.onSurfaceVariant
+                            ConsoleKind.STDERR -> MaterialTheme.colorScheme.error
+                            ConsoleKind.STDOUT -> MaterialTheme.colorScheme.onSurface
                         },
                         modifier = Modifier
                             .fillMaxWidth()

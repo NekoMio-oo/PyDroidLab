@@ -313,8 +313,11 @@ fun EditorScreen(vm: AppViewModel) {
                 SymbolBar(
                     symbols = vm.settings.symbolBar,
                     onInsert = { sym ->
-                        // selectionOffset == sym.length：插入后光标停在符号之后
-                        editorRef?.insertText(sym, sym.length)
+                        // Bug 7.4：走 commitText 而不是 insertText ——
+                        // commitText 才经过 sora 的符号配对管道（配对策略 +
+                        // skip-over 拦截器），让符号栏与键盘输入行为完全一致，
+                        // 也不需要在符号栏里再写一份插入逻辑。
+                        editorRef?.commitText(sym)
                     }
                 )
             }

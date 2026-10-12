@@ -21,6 +21,7 @@ import com.pydroidlab.app.python.RunConfigStore
 import com.pydroidlab.app.python.RunOptions
 import com.pydroidlab.app.ui.editor.EditorState
 import com.pydroidlab.app.ui.editor.EditorTab
+import com.pydroidlab.app.ui.editor.PythonLanguage
 import com.pydroidlab.app.ui.settings.AppSettings
 import com.pydroidlab.app.ui.settings.EditorSettings
 import com.pydroidlab.app.ui.settings.ThemeMode
@@ -32,7 +33,15 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
 /** 控制台里的一行（或一段未换行的文本）。 */
-data class ConsoleLine(val text: String, val isError: Boolean)
+/**
+ * 控制台一行的种类（Bug 4）：运行横幅、脚本输出、错误与结束行分色显示。
+ */
+enum class ConsoleKind { HEADER, STDOUT, STDERR, FOOTER }
+
+data class ConsoleLine(val text: String, val kind: ConsoleKind) {
+    /** 兼容旧调用方：错误行即 STDERR。 */
+    val isError: Boolean get() = kind == ConsoleKind.STDERR
+}
 
 /**
  * 全局共享状态：所有屏幕都从这一个 ViewModel 读写。
@@ -160,17 +169,47 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun sharedDir(): File =
         File(getApplication<Application>().filesDir, "shared").apply { mkdirs() }
 
+    // -------------------------------------------------------- scratch（Bug 3）
+    // 未命名标签页点「运行 / 保存」时静默落盘到这里，不再打断用户去手动
+    // 「另存为」。「另存为」仍保留给想选位置的用户。
+    private val scratchDir: File by lazy {
+        File(getApplication<Application>().filesDir, "scratch").apply { mkdirs() }
+    }
+
+    private var scratchSeq = 0
+
+    /** 把未命名标签页绑定到 scratch 目录里的一个新文件；已命名则原样返回。 */
+    private fun materializeScratch(tab: EditorTab): File {
+        tab.file?.let { return it }
+        var n = scratchSeq + 1
+        var f = File(scratchDir, "untitled_$n.py")
+        while (f.exists()) {
+            n++
+            f = File(scratchDir, "untitled_$n.py")
+        }
+        scratchSeq = n
+        tab.file = f
+        tab.title = "未命名-$n（临时）"
+        return f
+    }
+
+    /** 状态栏据此显示「临时」标记。 */
+    fun isScratchFile(file: File?): Boolean = file != null && file.parentFile == scratchDir
+
     fun saveActive(then: (() -> Unit)? = null): Boolean {
         val tab = editor.active ?: return false
-        if (tab.file == null) {
-            postNotice("未命名文件请先使用「另存为」")
-            return false
+        val wasScratch = tab.file == null
+        if (wasScratch) {
+            materializeScratch(tab)
         }
         applyFormatIfNeeded(tab)
         tab.save()
         refreshCompletion(tab.content.toString())
         touchEditor()
-        postNotice("已保存 ${tab.file?.name}")
+        postNotice(
+            if (wasScratch) "已自动保存为临时文件 ${tab.file?.name}"
+            else "已保存 ${tab.file?.name}"
+        )
         then?.invoke()
         return true
     }
@@ -252,6 +291,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 供补全用的「文件内可直接使用的名字」（from x import a, b）。 */
     fun completionNames(): List<String> = importNames
+
+    /**
+     * 编辑器诊断（Bug 1/2）：模拟输入 [prefix] 时本地补全缓存的候选数量。
+     * 与弹窗共用同一批数据源（内置名 + from-import 名 + 模块成员缓存），
+     * 数量为 0 说明缓存没建立（语言没挂上或分析没跑过）。
+     */
+    fun diagnosticCandidateCount(prefix: String): Int {
+        val set = sortedSetOf<String>()
+        set += PythonLanguage.PYTHON_BUILTINS.filter { it.startsWith(prefix) }
+        set += PythonLanguage.PYTHON_KEYWORDS.filter { it.startsWith(prefix) }
+        set += importNames.filter { it.startsWith(prefix) }
+        memberCache.values.forEach { set += it.filter { m -> m.startsWith(prefix) } }
+        return set.size
+    }
+
+    /** 诊断面板读取的分析线程状态。 */
+    val editorDiagnostics: PythonLanguage.EditorDiagnostics
+        get() = PythonLanguage.EditorDiagnostics
 
     /** 供 `模块.` 前缀补全用的成员列表（命中缓存，同步返回）。 */
     fun moduleMembers(module: String): List<String> =
@@ -339,10 +396,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             postNotice("没有打开的标签页")
             return
         }
-        val file = tab.file ?: run {
-            postNotice("请先「另存为」给未命名文件指定路径")
-            return
-        }
+        // Bug 3：未命名文件静默落到 scratch 目录后继续运行，全程不弹窗。
+        val file = tab.file ?: materializeScratch(tab)
         if (services.pythonRunner.running || isRunning) {
             postNotice("已有脚本在运行，请先中断")
             return
@@ -387,14 +442,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var pendingLine by mutableStateOf("")
         private set
 
-    private var pendingIsError = false
+    private var pendingKind = ConsoleKind.STDOUT
     private val consoleLock = Any()
 
     fun clearConsole() {
         synchronized(consoleLock) {
             lineList.clear()
             pendingLine = ""
-            pendingIsError = false
+            pendingKind = ConsoleKind.STDOUT
         }
     }
 
@@ -431,27 +486,34 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 把用户在控制台输入的一行交给被阻塞的 `input()`。 */
     fun submitInput(text: String) {
-        appendOutput(false, "$text\n")
+        appendOutput(ConsoleKind.STDOUT, "$text\n")
         HostBridge.submitStdin(text)
     }
 
-    private fun appendOutput(isErr: Boolean, chunk: String) {
+    /** stdout 流里的运行横幅 / 结束行按前缀归类，实现分色（Bug 4）。 */
+    private fun classifyChunk(chunk: String): ConsoleKind = when {
+        chunk.trimStart().startsWith("▶") -> ConsoleKind.HEADER
+        chunk.trimStart().startsWith("■") -> ConsoleKind.FOOTER
+        else -> ConsoleKind.STDOUT
+    }
+
+    private fun appendOutput(kind: ConsoleKind, chunk: String) {
         if (chunk.isEmpty()) return
         synchronized(consoleLock) {
             var rest = chunk
             while (rest.isNotEmpty()) {
-                if (pendingIsError != isErr && pendingLine.isNotEmpty()) {
-                    lineList.add(ConsoleLine(pendingLine, pendingIsError))
+                if (pendingKind != kind && pendingLine.isNotEmpty()) {
+                    lineList.add(ConsoleLine(pendingLine, pendingKind))
                     pendingLine = ""
                 }
-                pendingIsError = isErr
+                pendingKind = kind
                 val nl = rest.indexOf('\n')
                 if (nl < 0) {
                     pendingLine += rest
                     rest = ""
                 } else {
                     pendingLine += rest.substring(0, nl)
-                    lineList.add(ConsoleLine(pendingLine, pendingIsError))
+                    lineList.add(ConsoleLine(pendingLine, pendingKind))
                     pendingLine = ""
                     rest = rest.substring(nl + 1)
                 }
@@ -752,8 +814,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     PipMirror.values().firstOrNull { it.id == s.pipMirror } ?: PipMirror.PYPI
             }
         }
-        viewModelScope.launch { EventBus.stdout.collect { appendOutput(false, it) } }
-        viewModelScope.launch { EventBus.stderr.collect { appendOutput(true, it) } }
+        viewModelScope.launch { EventBus.stdout.collect { appendOutput(classifyChunk(it), it) } }
+        viewModelScope.launch { EventBus.stderr.collect { appendOutput(ConsoleKind.STDERR, it) } }
     }
 
     companion object {

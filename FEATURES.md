@@ -6,6 +6,19 @@
 
 ---
 
+## 0. Phase 0 真机 Bug 修复记录（v1.1.2）
+
+| # | 真机问题 | 根因 | 修复 | 验证方式 |
+| --- | --- | --- | --- | --- |
+| 1/2 | 代码补全 / 高亮不可见 | 代码层面无 API 误用（已对照 sora 0.23.6 源码核验），按排查加固 | ① `PythonAnalyzeManager.analyze` 全量 try/catch，异常打 logcat（TAG `PdlEditor`）、上报诊断并回退纯 TEXT_NORMAL，分析线程不再静默死掉；② 新设置「输入法联想时仍显示补全」映射 `props.autoCompletionOnComposing`（默认开）；③ 设置 → 诊断 → 「编辑器诊断」：语言挂载状态 / 最近分析结果 / 输入 `pri` 的候选数 | 设置页诊断面板；logcat 过滤 `PdlEditor` |
+| 3 | 未命名文件点运行/保存被要求先「另存为」 | `runActiveScript` / `saveActive` 直接拒绝 `tab.file == null` | 自动落盘到 `filesDir/scratch/untitled_<n>.py`（目录不存在则创建），绑定后继续，全程不弹窗；标签与状态栏显示「未命名-N（临时）」；「另存为」保留 | 新建标签 → 直接点「运行」→ 应正常出结果 |
+| 4 | 控制台运行结果无视觉区分 | stdout 与运行横幅同色 | `ConsoleLine` 增加 kind（HEADER/STDOUT/STDERR/FOOTER）分色：横幅 primary、stderr error、结束行弱化；结束行改为「■ 进程结束 · 退出码 X · 用时 Ys」（`PythonRunner` 记录开始时间，公开签名未变，退出码/耗时经控制台文本传出） | 运行任意脚本，横幅与结束行颜色应明显不同 |
+| 5 | 终端字体巨大 | `EmulatorView.setTextSize` 传了 px（sp × density），jackpal 内部再乘一次 density，density 被乘两次 | factory 与 update 两处改为直接传 dp：`setTextSize(fontSizeSp.roundToInt())` | 终端字号应与编辑器设置一致 |
+| 6 | REPL 输入表达式无回显 | `codeop.compile_command(symbol="exec")` 不走 displayhook | 改为 `symbol="single"`，表达式语句按原生 REPL 回显 repr；赋值不回显、多行块与 incomplete 判断不变 | REPL 输入 `1+1` 应显示 `2`；输入 `x=5` 不应显示；`def f():` 多行块照常 |
+| 7 | 括号自动配对无脑 | sora `SymbolPairMatch` 无上下文策略、无 skip-over | ① 引号：光标前/后紧贴单词字符时不补对（`SymbolPairEx.shouldReplace`）；② 右括号/引号：光标右侧已是同一字符时 skip-over（`ContentChangeEvent` 拦截，删掉刚插入的并右移光标）；③ 左括号后跟单词字符仍配对（默认行为）；④ SymbolBar 改走 `commitText`，与键盘输入共用同一套逻辑，不双重处理；`autoPair` 关闭时整体停用 | 输入 `abc"` 只出一个引号；在 `foo(|)` 输入 `)` 应跳过而非出现两个 |
+
+---
+
 ## A. 原始需求逐条对照表（v1.0 查漏）
 
 图例：

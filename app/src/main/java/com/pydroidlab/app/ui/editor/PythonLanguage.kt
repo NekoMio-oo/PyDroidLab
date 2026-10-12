@@ -24,6 +24,7 @@ import io.github.rosemoe.sora.lang.styling.line.LineSideIcon
 import io.github.rosemoe.sora.text.CharPosition
 import io.github.rosemoe.sora.text.Content
 import io.github.rosemoe.sora.text.ContentReference
+import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.SymbolPairMatch
 import java.util.regex.Pattern
 
@@ -121,11 +122,61 @@ class PythonLanguage(
     // ------------------------------------------------------------------------
     // Syntax highlighting
     // ------------------------------------------------------------------------
+/**
+ * 编辑器诊断状态（Bug 1/2）：供设置页的「编辑器诊断」面板读取。
+ * 分析线程在此上报，UI 侧只读，不引入新的跨层接口。
+ */
+object EditorDiagnostics {
+    /** 语言是否已挂到某个编辑器上（首次 analyze 被调用即视为已挂载）。 */
+    @Volatile var languageSeen: Boolean = false
+        private set
+
+    @Volatile var lastAnalyzeOk: Boolean = true
+        private set
+
+    @Volatile var lastAnalyzeError: String? = null
+        private set
+
+    @Volatile var lastAnalyzeAtMs: Long = 0L
+        private set
+
+    fun reportAnalyzeStarted() {
+        languageSeen = true
+        lastAnalyzeAtMs = System.currentTimeMillis()
+    }
+
+    fun reportAnalyzeSuccess() {
+        lastAnalyzeOk = true
+        lastAnalyzeError = null
+    }
+
+    fun reportAnalyzeFailure(t: Throwable) {
+        lastAnalyzeOk = false
+        lastAnalyzeError = t.toString()
+    }
+}
+
     private class PythonAnalyzeManager(
         private val breakpointProvider: () -> Set<Int>
     ) : SimpleAnalyzeManager<Void>() {
 
         override fun analyze(text: StringBuilder, delegate: Delegate<Void>): Styles {
+            // Bug 1/2 加固：分析线程抛任何异常都不能静默死掉 —— 记 logcat、
+            // 上报诊断，并回退为整篇纯 TEXT_NORMAL（空 Styles 即全普通文本），
+            // 至少保证断点圆点等基础能力仍在、编辑器依旧可输入。
+            return try {
+                EditorDiagnostics.reportAnalyzeStarted()
+                analyzeInner(text, delegate).also { EditorDiagnostics.reportAnalyzeSuccess() }
+            } catch (t: Throwable) {
+                android.util.Log.e("PdlEditor", "PythonAnalyzeManager.analyze failed", t)
+                EditorDiagnostics.reportAnalyzeFailure(t)
+                val fallback = Styles(MappedSpans.Builder().build())
+                fallback.finishBuilding()
+                fallback
+            }
+        }
+
+        private fun analyzeInner(text: StringBuilder, delegate: Delegate<Void>): Styles {
             val builder = MappedSpans.Builder()
             val source = text.toString()
             var line = 0
@@ -306,11 +357,32 @@ class PythonLanguage(
 
 /** Bracket & quote auto-pairing. */
 object PythonSymbolPairs : SymbolPairMatch() {
+
+    // Bug 7.2：输入引号时若光标前/后紧贴单词字符（字母/数字/下划线），
+    // 不自动补对 —— 只插入一个引号，避免 `abc"` 变成 `abc""` 这类灾难。
+    private val quoteEx = object : SymbolPair.SymbolPairEx {
+        override fun shouldReplace(
+            editor: CodeEditor,
+            currentLine: io.github.rosemoe.sora.text.ContentLine,
+            leftColumn: Int
+        ): Boolean {
+            val line = currentLine.toString()
+            val before = leftColumn > 0 && line[leftColumn - 1].isWordChar()
+            val after = leftColumn < line.length && line[leftColumn].isWordChar()
+            return !(before || after)
+        }
+    }
+
+    private fun Char.isWordChar(): Boolean = isLetterOrDigit() || this == '_'
+
     init {
+        // 规则 3（左括号后跟单词字符仍配对）即默认行为，无需额外策略；
+        // 规则 1（右括号 skip-over）在 CodeEditorView 的 ContentChangeEvent
+        // 拦截器里实现 —— SymbolPairEx 只能决定"配不配对"，做不到"跳过"。
         putPair('(', SymbolPair("(", ")"))
         putPair('[', SymbolPair("[", "]"))
         putPair('{', SymbolPair("{", "}"))
-        putPair('"', SymbolPair("\"", "\""))
-        putPair('\'', SymbolPair("'", "'"))
+        putPair('"', SymbolPair("\"", "\"", quoteEx))
+        putPair('\'', SymbolPair("'", "'", quoteEx))
     }
 }

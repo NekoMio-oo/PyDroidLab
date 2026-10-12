@@ -50,6 +50,7 @@ import com.pydroidlab.app.shell.PyShell
 import com.pydroidlab.app.terminal.TerminalController
 import com.pydroidlab.app.ui.AppViewModel
 import com.pydroidlab.app.ui.settings.ThemeMode
+import kotlin.math.roundToInt
 
 /** 一个终端会话：控制器 + 显示用的序号。 */
 private class TermSessionEntry(val id: Int, val controller: TerminalController)
@@ -215,14 +216,17 @@ private fun TerminalPane(
             .alpha(if (visible) 1f else 0f),
         factory = { ctx ->
             EmulatorView(ctx, controller.session, metrics).apply {
-                setTextSize((vm.settings.editor.fontSizeSp * metrics.density).toInt())
+                // jackpal 的 setTextSize(int) 参数单位是 **dp**，内部会自己乘
+                // mDensity 换算成 px。这里直接传 sp 值，不能再乘 density，
+                // 否则字体在高密度屏上会被放大好几倍（Bug 5 的根因）。
+                setTextSize(vm.settings.editor.fontSizeSp.roundToInt())
                 setColorScheme(ColorScheme(fore, back))
                 setUseCookedIME(true)
                 emulator = this
             }
         },
         update = { ev ->
-            ev.setTextSize((vm.settings.editor.fontSizeSp * metrics.density).toInt())
+            ev.setTextSize(vm.settings.editor.fontSizeSp.roundToInt())
             ev.setColorScheme(ColorScheme(fore, back))
         }
     )
