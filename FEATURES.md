@@ -183,7 +183,7 @@
 
 | # | 验收标准 | 结果 | 证据 / 说明 |
 | --- | --- | --- | --- |
-| 1 | 新建文件 → 写含 `print` + `input` 的程序 → 运行 → 交互输入 → 正确输出 | ✅ Python 侧已验 / 🟢 UI 待真机 | **逻辑验证**：桩 `pdl_host.read_stdin` 依次返回 `42` / `小明`，`pdl_runner.run_script` 输出<br>`请输入一个整数：你输入了: 42  它的平方是: 1764`<br>`你的名字：你好, 小明`<br>同一测试还确认 `argv=['--flag','value']`、`cwd=/tmp/pytest`、env 注入生效。UI 侧（控制台底部输入框 → `HostBridge.submitStdin`）需真机点一遍。 |
+| 1 | 新建文件 → 写含 `print` + `input` 的程序 → 运行 → 交互输入 → 正确输出 | ✅ Python 侧已验 / 🟢 UI 待真机 | **逻辑验证**：桩 `pdl_host.read_stdin` 依次返回 `42` / `小明`，`pdl_runner.run_script` 输出<br>`请输入一个整数：你输入了: 42  它的平方是: 1764`<br>`你的名字：你好, 小明`<br>同一测试还确认 `argv`、cwd 切换、env 注入均生效。UI 侧（控制台底部输入框 → `HostBridge.submitStdin`）需真机点一遍。 |
 | 2 | 死循环脚本可中断 | ✅ 已验 | **逻辑验证**：`pdl_interrupt` 打断 `while True: i += 1`，线程捕获到 `KeyboardInterrupt`（打断时已执行 **43,483,626** 次迭代）。`time.sleep(30)` 无法打断 —— CPython 只在字节码边界检查异步异常，已如实写入 README §5.3。 |
 | 3 | pip 安装 requests 并 import 使用 | 🟢 待真机 | **静态验证**：构建期 pip 已成功把 `requests` 与 `black` 及其依赖打进 APK（构建日志无错）。运行时链路 `PackagesScreen → PackageManager → pdl_pip.subprocess` 需联网设备确认。 |
 | 3b | 切换清华源成功 | 🟢 待真机 | 软件包页 / 设置页切换后写入 `AppSettings.pipMirror`，`pdl_pip._run` 会追加 `-i https://pypi.tuna.tsinghua.edu.cn/simple`；**静态验证**确认参数拼接正确，实际下载需联网设备。 |
