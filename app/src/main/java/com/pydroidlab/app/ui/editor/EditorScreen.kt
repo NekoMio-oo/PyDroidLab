@@ -152,15 +152,51 @@ fun EditorScreen(vm: AppViewModel, embedded: Boolean = false) {
         }
     }
 
-    // 分析看门狗：sora 的分析线程遇异常会静默死亡且 UI 无感知。进入编辑器
-    // 4 秒后若语言仍未完成过一次分析，明确提示并补触发一次 rerun。
+    // 分析自愈循环：sora 的分析线程遇异常会静默死亡且无法复活，唯一可靠的
+    // 办法是换一个全新的语言实例（新分析器 + 新分析线程）。每 2.5 秒体检
+    // 一次：失败 → 自动重建（上限 3 次）；重建后恢复 → Snackbar 报喜；
+    // 语言一直没挂上 → 提示去诊断面板。
     LaunchedEffect(active?.id) {
-        kotlinx.coroutines.delay(4000)
-        if (!PythonLanguage.EditorDiagnostics.languageSeen) {
-            vm.postNotice("编辑器分析未启动：请到 设置 → 诊断 → 编辑器诊断 查看详情")
-            try {
-                editorRef?.editorLanguage?.analyzeManager?.rerun()
-            } catch (_: Throwable) {
+        var pendingStartupHint = true
+        // delay 是可取消挂起点：LaunchedEffect 离开组合时协程被取消，循环随之结束
+        while (true) {
+            kotlinx.coroutines.delay(2500)
+            val d = EditorDiagnostics
+            if (!d.languageSeen) {
+                if (pendingStartupHint) {
+                    pendingStartupHint = false
+                    vm.postNotice("编辑器分析未启动：请到 设置 → 诊断 → 编辑器诊断 查看详情")
+                    try {
+                        editorRef?.editorLanguage?.analyzeManager?.rerun()
+                    } catch (_: Throwable) {
+                    }
+                }
+                continue
+            }
+            if (!d.lastAnalyzeOk && d.rebuildCount < 3) {
+                d.rebuildCount++
+                editorRef?.let { e ->
+                    try {
+                        e.setEditorLanguage(
+                            PythonLanguage(
+                                identifierProvider = { vm.completionNames() },
+                                memberProvider = { module -> vm.moduleMembers(module) },
+                                breakpointProvider = {
+                                    val path = active?.file?.absolutePath
+                                    if (path == null) emptySet()
+                                    else breakpoints.filter { it.first == path }.map { it.second - 1 }.toSet()
+                                }
+                            )
+                        )
+                        vm.postNotice("编辑器分析线程异常，已自动重建（第 ${d.rebuildCount} 次）")
+                    } catch (_: Throwable) {
+                    }
+                }
+            } else if (d.lastAnalyzeOk && d.rebuildCount > 0) {
+                vm.postNotice("编辑器分析已恢复正常")
+                // 只报一次喜：把计数清零避免重复提示
+                d.rebuildCount = 0
+                d.markRecovered()
             }
         }
     }

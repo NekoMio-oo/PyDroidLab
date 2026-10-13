@@ -154,6 +154,13 @@ object EditorDiagnostics {
     @Volatile var lastAnalyzeAtMs: Long = 0L
         private set
 
+    /** 连续失败计数（自愈重建的依据）。 */
+    @Volatile var failureCount: Int = 0
+        private set
+
+    /** 已自动重建语言实例的次数（上限 3，防止异常反复时陷入循环）。 */
+    @Volatile var rebuildCount: Int = 0
+
     fun reportAnalyzeStarted() {
         languageSeen = true
         lastAnalyzeAtMs = System.currentTimeMillis()
@@ -164,9 +171,15 @@ object EditorDiagnostics {
         lastAnalyzeError = null
     }
 
+    /** 重建后首次分析成功时调用：清零失败计数，避免重复提示。 */
+    fun markRecovered() {
+        failureCount = 0
+    }
+
     fun reportAnalyzeFailure(t: Throwable) {
         lastAnalyzeOk = false
         lastAnalyzeError = t.toString()
+        failureCount++
         // sora 的分析线程遇任何异常会**静默死亡**（源码注释：
         // "The thread will keep alive unless there is any exception"），
         // UI 完全无感知。把异常直接打到控制台与 logcat，让问题可见。

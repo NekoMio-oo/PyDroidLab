@@ -13,8 +13,8 @@ android {
         applicationId = "com.pydroidlab.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.2.0-alpha02"
+        versionCode = 7
+        versionName = "1.2.0-alpha03"
 
         vectorDrawables { useSupportLibrary = true }
 
