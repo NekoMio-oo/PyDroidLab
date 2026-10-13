@@ -71,6 +71,7 @@ import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 import com.pydroidlab.app.ui.AppViewModel
+import com.pydroidlab.app.ui.editor.PythonLanguage.EditorDiagnostics
 import com.pydroidlab.app.ui.settings.ThemeMode
 import java.io.File
 import kotlin.math.abs
@@ -148,6 +149,19 @@ fun EditorScreen(vm: AppViewModel, embedded: Boolean = false) {
         if (vm.pendingRunConfigEdit) {
             showRunConfig = true
             vm.consumeRunConfigEdit()
+        }
+    }
+
+    // 分析看门狗：sora 的分析线程遇异常会静默死亡且 UI 无感知。进入编辑器
+    // 4 秒后若语言仍未完成过一次分析，明确提示并补触发一次 rerun。
+    LaunchedEffect(active?.id) {
+        kotlinx.coroutines.delay(4000)
+        if (!PythonLanguage.EditorDiagnostics.languageSeen) {
+            vm.postNotice("编辑器分析未启动：请到 设置 → 诊断 → 编辑器诊断 查看详情")
+            try {
+                editorRef?.editorLanguage?.analyzeManager?.rerun()
+            } catch (_: Throwable) {
+            }
         }
     }
 

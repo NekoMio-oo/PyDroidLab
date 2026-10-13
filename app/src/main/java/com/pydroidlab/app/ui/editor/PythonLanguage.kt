@@ -57,6 +57,20 @@ class PythonLanguage(
         publisher: CompletionPublisher,
         extraArguments: Bundle
     ) {
+        // 补全回调在 UI 线程；任何异常都不能让它死掉（否则此后补全永远无候选）。
+        try {
+            requireAutoCompleteInner(content, position, publisher, extraArguments)
+        } catch (t: Throwable) {
+            android.util.Log.e("PdlEditor", "requireAutoComplete failed", t)
+        }
+    }
+
+    private fun requireAutoCompleteInner(
+        content: ContentReference,
+        position: CharPosition,
+        publisher: CompletionPublisher,
+        extraArguments: Bundle
+    ) {
         // 允许把 '.' 也算进前缀，这样 "math.pi" 能作为整体传进来
         val prefix = CompletionHelper.computePrefix(content, position) { ch ->
             Character.isJavaIdentifierPart(ch) || ch == '.'
@@ -153,6 +167,17 @@ object EditorDiagnostics {
     fun reportAnalyzeFailure(t: Throwable) {
         lastAnalyzeOk = false
         lastAnalyzeError = t.toString()
+        // sora 的分析线程遇任何异常会**静默死亡**（源码注释：
+        // "The thread will keep alive unless there is any exception"），
+        // UI 完全无感知。把异常直接打到控制台与 logcat，让问题可见。
+        android.util.Log.e("PdlEditor", "PythonAnalyzeManager.analyze failed", t)
+        try {
+            com.pydroidlab.app.core.EventBus.emitStderr(
+                "[编辑器] 语法分析失败（分析线程已停止）：$t\n" +
+                    "请到 设置 → 诊断 → 编辑器诊断 查看详情。\n"
+            )
+        } catch (_: Throwable) {
+        }
     }
 }
 

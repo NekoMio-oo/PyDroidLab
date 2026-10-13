@@ -1,5 +1,6 @@
 package com.pydroidlab.app.ui.terminal
 
+import android.content.Context
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -222,6 +223,18 @@ private fun TerminalPane(
                 setTextSize(vm.settings.editor.fontSizeSp.roundToInt())
                 setColorScheme(ColorScheme(fore, back))
                 setUseCookedIME(true)
+                // 输入法修复：真机上仅靠 EmulatorView 内部的 requestFocus
+                // 不一定弹出软键盘；点击时显式抢焦点 + 请求显示 IME。
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnClickListener { v ->
+                    v.requestFocus()
+                    val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE)
+                        as android.view.inputmethod.InputMethodManager
+                    imm.showSoftInput(v, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }
+                // 首次进入页面主动抢一次焦点
+                post { requestFocus() }
                 emulator = this
             }
         },

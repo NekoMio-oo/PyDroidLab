@@ -27,12 +27,14 @@ import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.FormatAlignLeft
+import androidx.compose.material.icons.filled.InsertChart
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -224,13 +226,29 @@ private fun PillToolbar(
                         onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_CONSOLE) }
                     )
                     DropdownMenuItem(
+                        text = { Text("终端") },
+                        leadingIcon = { Icon(Icons.Default.Terminal, contentDescription = null) },
+                        onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_TERMINAL) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("图表") },
+                        leadingIcon = { Icon(Icons.Default.InsertChart, contentDescription = null) },
+                        onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_CHARTS) }
+                    )
+                    DropdownMenuItem(
                         text = { Text("调试器") },
                         leadingIcon = { Icon(Icons.Default.BugReport, contentDescription = null) },
                         onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_DEBUGGER) }
                     )
                     DropdownMenuItem(
-                        text = { Text("终端 / 图表 / REPL / 文件管理") },
-                        onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_TERMINAL) }
+                        text = { Text("REPL") },
+                        leadingIcon = { Icon(Icons.Default.Terminal, contentDescription = null) },
+                        onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_REPL) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("文件管理") },
+                        leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null) },
+                        onClick = { moreMenu = false; onNavigate(AppViewModel.ROUTE_FILES) }
                     )
                     MenuDivider()
                     DropdownMenuItem(
