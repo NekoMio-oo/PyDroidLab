@@ -1,47 +1,38 @@
 package com.pydroidlab.app.ui
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertChart
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -59,16 +50,16 @@ import com.pydroidlab.app.ui.repl.ReplScreen
 import com.pydroidlab.app.ui.settings.SettingsScreen
 import com.pydroidlab.app.ui.terminal.TerminalScreen
 import com.pydroidlab.app.ui.theme.PyDroidLabTheme
-import kotlinx.coroutines.launch
+import com.pydroidlab.app.ui.workspace.WorkspaceScreen
 
-/** 导航抽屉里的一项。 */
+/** 导航里的一项（旧 10 页在 Phase 2 迁移期间保留独立入口）。 */
 data class AppDestination(
     val route: String,
     val label: String,
     val icon: ImageVector
 )
 
-/** 全部 10 个功能界面（顺序即抽屉顺序）。 */
+/** 全部 10 个功能界面。 */
 val APP_DESTINATIONS: List<AppDestination> = listOf(
     AppDestination(AppViewModel.ROUTE_EDITOR, "编辑器", Icons.Default.Code),
     AppDestination(AppViewModel.ROUTE_CONSOLE, "控制台", Icons.Default.Article),
@@ -82,13 +73,16 @@ val APP_DESTINATIONS: List<AppDestination> = listOf(
     AppDestination(AppViewModel.ROUTE_SETTINGS, "设置", Icons.Default.Settings)
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+private fun destinationIcon(route: String): ImageVector =
+    APP_DESTINATIONS.firstOrNull { it.route == route }?.icon ?: Icons.Default.Folder
+
+private fun destinationLabel(route: String): String =
+    APP_DESTINATIONS.firstOrNull { it.route == route }?.label ?: "PyDroidLab"
+
 @Composable
 fun PyDroidLabRoot(vm: AppViewModel) {
     PyDroidLabTheme(themeMode = vm.settings.themeMode) {
         val navController = rememberNavController()
-        val drawerState = rememberDrawerState(DrawerValue.Closed)
-        val scope = rememberCoroutineScope()
         val snackbarHostState = remember { SnackbarHostState() }
 
         // ViewModel 发起的跳转（例如「运行」后自动打开控制台）。
@@ -109,87 +103,127 @@ fun PyDroidLabRoot(vm: AppViewModel) {
         }
 
         val backStackEntry by navController.currentBackStackEntryAsState()
-        val currentRoute = backStackEntry?.destination?.route ?: AppViewModel.ROUTE_EDITOR
-        val currentTitle = APP_DESTINATIONS.firstOrNull { it.route == currentRoute }?.label ?: "PyDroidLab"
+        val currentRoute = backStackEntry?.destination?.route ?: AppViewModel.ROUTE_MAIN
 
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            drawerContent = {
-                ModalDrawerSheet {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 24.dp)
-                    ) {
-                        Text(
-                            text = "PyDroidLab",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Python 3.11 · Chaquopy · Compose",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    HorizontalDivider()
-                    Spacer(Modifier.height(8.dp))
-                    APP_DESTINATIONS.forEach { dest ->
-                        NavigationDrawerItem(
-                            label = { Text(dest.label) },
-                            icon = { Icon(dest.icon, contentDescription = null) },
-                            selected = dest.route == currentRoute,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                if (dest.route != currentRoute) navController.navigateTo(dest.route)
-                            },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                        )
-                    }
-                }
-            }
-        ) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = { Text(currentTitle) },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.Menu, contentDescription = "打开导航")
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavHost(
+                navController = navController,
+                startDestination = AppViewModel.ROUTE_MAIN,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .imePadding()
+            ) {
+                // 底部导航主框架（项目 / 软件包 / 教程 / 我的）
+                composable(AppViewModel.ROUTE_MAIN) {
+                    MainScaffold(
+                        vm = vm,
+                        onOpenWorkspace = {
+                            navController.navigate(AppViewModel.ROUTE_WORKSPACE) {
+                                launchSingleTop = true
                             }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        }
                     )
-                },
-                snackbarHost = { SnackbarHost(snackbarHostState) }
-            ) { innerPadding ->
-                NavHost(
-                    navController = navController,
-                    startDestination = AppViewModel.ROUTE_EDITOR,
-                    modifier = Modifier
-                        .padding(innerPadding)
-                        .imePadding()
-                ) {
-                    composable(AppViewModel.ROUTE_EDITOR) { EditorScreen(vm) }
-                    composable(AppViewModel.ROUTE_CONSOLE) { ConsoleScreen(vm) }
-                    composable(AppViewModel.ROUTE_TERMINAL) { TerminalScreen(vm) }
-                    composable(AppViewModel.ROUTE_FILES) { FilesScreen(vm) }
-                    composable(AppViewModel.ROUTE_PACKAGES) { PackagesScreen(vm) }
-                    composable(AppViewModel.ROUTE_CHARTS) { ChartsScreen(vm) }
-                    composable(AppViewModel.ROUTE_DEBUGGER) { DebuggerScreen(vm) }
-                    composable(AppViewModel.ROUTE_REPL) { ReplScreen(vm) }
-                    composable(AppViewModel.ROUTE_LEARN) { LearnScreen(vm) }
-                    composable(AppViewModel.ROUTE_SETTINGS) { SettingsScreen(vm) }
+                }
+
+                // 项目工作区（独立于底部导航；状态在 AppViewModel，不随导航丢失）
+                composable(AppViewModel.ROUTE_WORKSPACE) {
+                    WorkspaceScreen(vm, onNavigate = { r -> navController.navigateTo(r) })
+                }
+
+                // 旧 10 页：Phase 2 陆续迁入工作区；期间全部保留可达
+                composable(AppViewModel.ROUTE_EDITOR) {
+                    SubPage(vm, AppViewModel.ROUTE_EDITOR, onBack = { navController.popBackStack() }) {
+                        EditorScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_CONSOLE) {
+                    SubPage(vm, AppViewModel.ROUTE_CONSOLE, onBack = { navController.popBackStack() }) {
+                        ConsoleScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_TERMINAL) {
+                    SubPage(vm, AppViewModel.ROUTE_TERMINAL, onBack = { navController.popBackStack() }) {
+                        TerminalScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_FILES) {
+                    SubPage(vm, AppViewModel.ROUTE_FILES, onBack = { navController.popBackStack() }) {
+                        FilesScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_PACKAGES) {
+                    SubPage(vm, AppViewModel.ROUTE_PACKAGES, onBack = { navController.popBackStack() }) {
+                        PackagesScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_CHARTS) {
+                    SubPage(vm, AppViewModel.ROUTE_CHARTS, onBack = { navController.popBackStack() }) {
+                        ChartsScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_DEBUGGER) {
+                    SubPage(vm, AppViewModel.ROUTE_DEBUGGER, onBack = { navController.popBackStack() }) {
+                        DebuggerScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_REPL) {
+                    SubPage(vm, AppViewModel.ROUTE_REPL, onBack = { navController.popBackStack() }) {
+                        ReplScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_LEARN) {
+                    SubPage(vm, AppViewModel.ROUTE_LEARN, onBack = { navController.popBackStack() }) {
+                        LearnScreen(vm)
+                    }
+                }
+                composable(AppViewModel.ROUTE_SETTINGS) {
+                    SubPage(vm, AppViewModel.ROUTE_SETTINGS, onBack = { navController.popBackStack() }) {
+                        SettingsScreen(vm)
+                    }
                 }
             }
+
+            // 全局 Snackbar 悬浮在底部（所有页面共享 VM 的 postNotice）
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (currentRoute == AppViewModel.ROUTE_MAIN) 88.dp else 16.dp)
+            )
         }
     }
 }
 
-/** 单层返回栈 + 单个实例，避免抽屉反复点击堆栈膨胀。 */
+/** 带返回箭头的独立页面容器（旧 10 页通用）。 */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubPage(vm: AppViewModel, route: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(destinationLabel(route)) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            content()
+        }
+    }
+}
+
+/** 单层返回栈 + 单个实例，避免反复点击堆栈膨胀。 */
 private fun androidx.navigation.NavHostController.navigateTo(route: String) {
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }

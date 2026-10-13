@@ -2,8 +2,11 @@ package com.pydroidlab.app.ui.editor
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -27,10 +30,12 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -54,6 +59,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -77,7 +83,10 @@ import kotlin.math.abs
  * [AppViewModel.editor]，因此横竖屏旋转不会丢内容，切标签也会恢复光标。
  */
 @Composable
-fun EditorScreen(vm: AppViewModel) {
+fun EditorScreen(vm: AppViewModel, embedded: Boolean = false) {
+    // Phase 1：embedded = true 时由「项目工作区」承载 —— 自有工具栏换成一排
+    // 编辑器强绑定操作（另存为/查找/格式化），运行/保存/调试移到工作区 pill
+    // 工具栏；符号栏前部追加撤销 / 重做 / TAB。默认 false 保持旧行为。
     // 读取 revision 让所有基于 EditorState 的变更都能触发重组
     vm.editorRevision
 
@@ -134,7 +143,16 @@ fun EditorScreen(vm: AppViewModel) {
         }
     }
 
+    // 工作区 pill 工具栏的「编辑运行配置…」（Phase 1）
+    LaunchedEffect(vm.pendingRunConfigEdit) {
+        if (vm.pendingRunConfigEdit) {
+            showRunConfig = true
+            vm.consumeRunConfigEdit()
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
+        if (!embedded) {
         EditorActionBar(
             running = vm.isRunning,
             hasTab = active != null,
@@ -185,6 +203,13 @@ fun EditorScreen(vm: AppViewModel) {
                 }
             }
         )
+        } else {
+            EmbeddedActionBar(
+                onSaveAs = { showSaveAs = true },
+                onFind = { showFind = true },
+                onFormat = { vm.formatActiveTab() }
+            )
+        }
 
         if (editorState.tabs.isEmpty()) {
             // 空状态整块居中。
@@ -310,16 +335,38 @@ fun EditorScreen(vm: AppViewModel) {
             }
 
             if (showSymbolBar) {
-                SymbolBar(
-                    symbols = vm.settings.symbolBar,
-                    onInsert = { sym ->
-                        // Bug 7.4：走 commitText 而不是 insertText ——
-                        // commitText 才经过 sora 的符号配对管道（配对策略 +
-                        // skip-over 拦截器），让符号栏与键盘输入行为完全一致，
-                        // 也不需要在符号栏里再写一份插入逻辑。
-                        editorRef?.commitText(sym)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (embedded) {
+                        // 工作区精简符号栏前段：撤销 / 重做 / TAB（TinaIDE 风格）
+                        IconButton(onClick = { editorRef?.undo() }, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Default.Undo, contentDescription = "撤销", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { editorRef?.redo() }, modifier = Modifier.size(38.dp)) {
+                            Icon(Icons.Default.Redo, contentDescription = "重做", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(
+                            onClick = { editorRef?.commitText("\t") },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Text("TAB", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Spacer(Modifier.width(4.dp))
                     }
-                )
+                    SymbolBar(
+                        symbols = vm.settings.symbolBar,
+                        modifier = Modifier.weight(1f),
+                        onInsert = { sym ->
+                            // Bug 7.4：走 commitText 而不是 insertText ——
+                            // commitText 才经过 sora 的符号配对管道（配对策略 +
+                            // skip-over 拦截器），让符号栏与键盘输入行为完全一致，
+                            // 也不需要在符号栏里再写一份插入逻辑。
+                            editorRef?.commitText(sym)
+                        }
+                    )
+                }
             }
         }
 
@@ -329,7 +376,9 @@ fun EditorScreen(vm: AppViewModel) {
             line = cursorLine,
             column = cursorCol,
             dirty = active?.isDirty == true,
-            breakpoints = activePath?.let { path -> breakpoints.count { it.first == path } } ?: 0
+            breakpoints = activePath?.let { path -> breakpoints.count { it.first == path } } ?: 0,
+            // Phase 3 接 Jedi 后由 VM 提供；Phase 1 恒为灰点占位
+            smartReady = false
         )
     }
 
@@ -557,7 +606,14 @@ private fun EditorActionBar(
 }
 
 @Composable
-private fun StatusBar(path: String, line: Int, column: Int, dirty: Boolean, breakpoints: Int) {
+private fun StatusBar(
+    path: String,
+    line: Int,
+    column: Int,
+    dirty: Boolean,
+    breakpoints: Int,
+    smartReady: Boolean = false
+) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
         Row(
             modifier = Modifier
@@ -565,11 +621,35 @@ private fun StatusBar(path: String, line: Int, column: Int, dirty: Boolean, brea
                 .padding(horizontal = 10.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // ● Python 智能就绪（Phase 3 Jedi 就绪时绿点，现在灰点占位）
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(
+                        if (smartReady) Color(0xFF34A853) else MaterialTheme.colorScheme.outline,
+                        CircleShape
+                    )
+            )
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = if (smartReady) "Python 智能就绪" else "智能未就绪",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "UTF-8",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.weight(1f))
             Text(
                 text = path,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f)
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.weight(2f)
             )
             Text(
                 text = buildString {
@@ -581,6 +661,21 @@ private fun StatusBar(path: String, line: Int, column: Int, dirty: Boolean, brea
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/** 工作区（embedded）模式下的精简操作行：只保留编辑器强绑定动作。 */
+@Composable
+private fun EmbeddedActionBar(onSaveAs: () -> Unit, onFind: () -> Unit, onFormat: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp, vertical = 0.dp)
+    ) {
+        TextButton(onClick = onSaveAs) { Text("另存为") }
+        TextButton(onClick = onFind) { Text("查找/替换") }
+        TextButton(onClick = onFormat) { Text("格式化") }
     }
 }
 

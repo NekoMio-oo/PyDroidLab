@@ -10,7 +10,7 @@
 
 | 项目 | 当前值 |
 | --- | --- |
-| 版本 | **1.1.2**（`versionCode = 4`） |
+| 版本 | **1.2.0-alpha01**（`versionCode = 5`，Phase 1） |
 | 应用 ID | `com.pydroidlab.app` |
 | Python | 3.11（Chaquopy 15.0.1） |
 | minSdk / targetSdk | 26 / 34 |
@@ -355,6 +355,19 @@ Android wheel，合计数百 MB，只能通过「软件包」页在运行时按�
 ---
 
 ## 8. 更新日志
+
+### v1.2.0-alpha01 —— 2026-10-13（`versionCode = 5`，Phase 1）
+
+TinaIDE 风格重构第一步：从「抽屉里 10 个平级工具页」改为「项目为中心」。
+
+| 部分 | 变更 |
+| --- | --- |
+| 底部导航 | 4 个 Tab：**项目 / 软件包 / 教程 / 我的**；Tab 切换不丢工作区状态（状态全在 ViewModel） |
+| 项目主页 | 项目卡片（首字母哈希柔和底色头像、Python 标签、存储路径、「最近更新」绿点、⋮ 菜单：打开/重命名/删除）；顶部搜索按名过滤；「最近打开 / 其他项目」分区；FAB 新建项目；新建后自动进入工作区 |
+| 项目工作区 | 顶部 pill 工具栏（☰ 文件树抽屉 ｜ 运行配置下拉概览+编辑 ｜ ▶ 运行 ｜ 🐞 调试 ｜ 💾 保存 ｜ ⋮ 更多）；左侧树形文件抽屉（点文件在标签页打开、可新建文件/文件夹）；标签页+编辑器复用现有实现（Phase 0 的修复全部保留）；状态栏新增「● Python 智能就绪（Phase 3 Jedi 占位灰点）/ UTF-8」段；符号栏前部追加撤销 / 重做 / TAB |
+| 面板 | 控制台/终端/图表/调试/REPL/文件管理在 Phase 1 仍为独立页，从工作区 ⋮ 或「我的 → 页面（Phase 2 迁移中）」进入；Phase 2 内嵌为工作区可切换面板 |
+| 我的 | 关于卡新增 GitHub 仓库链接与开源组件许可清单 |
+| 架构 | 新增 `ui/projects/ProjectsScreen`、`ui/workspace/WorkspaceScreen`、`ui/MainScaffold`、`project/RecentProjects`；`EditorScreen` 增加 embedded 模式；旧 10 页 route 全部保留 |
 
 ### v1.1.2 —— 2026-10-13（`versionCode = 4`）
 

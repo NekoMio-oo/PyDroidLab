@@ -87,6 +87,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pendingEditorCommand = null
     }
 
+    // 工作区 pill 工具栏的「编辑运行配置…」：EditorScreen（embedded）消费后
+    // 弹出 RunConfigDialog。独立于 pendingEditorCommand，因为后者会顺带把
+    // 导航切到旧编辑器页，在工作区里不合适。
+    var pendingRunConfigEdit by mutableStateOf(false)
+        private set
+
+    fun requestEditRunConfig() {
+        pendingRunConfigEdit = true
+    }
+
+    fun consumeRunConfigEdit() {
+        pendingRunConfigEdit = false
+    }
+
     /** 顶部 Snackbar 提示。 */
     var notice by mutableStateOf<String?>(null)
         private set
@@ -556,6 +570,60 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         services.projectManager.lastOpenedProject = project.name
     }
 
+    // ---------------------------------------------- 项目主页（Phase 1） --
+    private val recentProjectsStore by lazy {
+        com.pydroidlab.app.project.RecentProjects(services.appContext)
+    }
+
+    /** 主页搜索框内容；空串表示不过滤。 */
+    var projectSearchQuery by mutableStateOf("")
+        private set
+
+    fun setProjectSearch(q: String) {
+        projectSearchQuery = q
+    }
+
+    /** 按搜索词过滤后的全部项目（名称包含，忽略大小写）。 */
+    val filteredProjects: List<Project>
+        get() {
+            val q = projectSearchQuery.trim().lowercase()
+            return if (q.isEmpty()) projects
+            else projects.filter { it.name.lowercase().contains(q) }
+        }
+
+    /** 「最近打开」分区：名单里仍存在的项目，按名单顺序。 */
+    val recentProjects: List<Project>
+        get() = recentProjectsStore.names().mapNotNull { name ->
+            projects.firstOrNull { it.name == name }
+        }
+
+    /** 点项目卡片：记住最近名单；导航由调用方（ProjectsScreen）触发。 */
+    fun openProject(project: Project) {
+        selectProject(project)
+        recentProjectsStore.touch(project.name)
+        refreshRecent()
+    }
+
+    /** 工作区 ⋮ → 关闭项目，回到项目主页。 */
+    fun closeProject() {
+        currentProject = null
+        currentDir = null
+        requestNavigate(ROUTE_MAIN)
+    }
+
+    fun renameProject(project: Project, newName: String): Project? {
+        val clean = newName.trim()
+        if (clean.isEmpty()) return null
+        val renamed = services.projectManager.renameProject(project, clean)
+        projects = services.projectManager.listProjects()
+        recentProjectsStore.remove(project.name)
+        if (currentProject?.name == project.name) {
+            selectProject(renamed)
+        }
+        touchEditor()
+        return renamed
+    }
+
     fun createProject(name: String) {
         val p = services.projectManager.createProject(name)
         projects = services.projectManager.listProjects()
@@ -565,6 +633,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteProject(project: Project) {
         services.projectManager.deleteProject(project)
+        recentProjectsStore.remove(project.name)
         projects = services.projectManager.listProjects()
         if (currentProject?.name == project.name) {
             currentProject = projects.firstOrNull()
@@ -819,6 +888,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
+        // Phase 1：底部导航主框架 + 项目工作区
+        const val ROUTE_MAIN = "main"
+        const val ROUTE_WORKSPACE = "workspace"
+
         const val ROUTE_EDITOR = "editor"
         const val ROUTE_CONSOLE = "console"
         const val ROUTE_TERMINAL = "terminal"

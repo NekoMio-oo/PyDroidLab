@@ -398,6 +398,27 @@ fun SettingsScreen(vm: AppViewModel) {
             )
         }
 
+        // --------------------------- 旧页面入口（Phase 2 迁移完成后移除） --
+        SectionCard(title = "页面（Phase 2 迁移中）") {
+            Text(
+                text = "以下页面在 Phase 2 会迁入项目工作区的可切换面板，" +
+                    "迁移期间从这里进入。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_CONSOLE) }) { Text("控制台") }
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_TERMINAL) }) { Text("终端") }
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_FILES) }) { Text("文件") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_CHARTS) }) { Text("图表") }
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_DEBUGGER) }) { Text("调试") }
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_REPL) }) { Text("REPL") }
+                TextButton(onClick = { vm.requestNavigate(AppViewModel.ROUTE_EDITOR) }) { Text("编辑器(旧)") }
+            }
+        }
+
         // --------------------------------------------- 编辑器诊断（Bug 1/2）
         SectionCard(title = "诊断") {
             TextButton(onClick = { showDiagnostics = true }) {
@@ -411,6 +432,7 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
         SectionCard(title = "关于") {
+            val context = androidx.compose.ui.platform.LocalContext.current
             // 版本号从 BuildConfig 读取，避免升级时忘记同步这里的硬编码文案。
             val version = BuildConfig.VERSION_NAME
             val build = BuildConfig.VERSION_CODE
@@ -418,6 +440,25 @@ fun SettingsScreen(vm: AppViewModel) {
                 text = "PyDroidLab $version（build $build）\n" +
                     "Python 3.11（Chaquopy 内嵌）· Jetpack Compose Material 3 · sora-editor",
                 style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            TextButton(onClick = {
+                try {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse("https://github.com/NekoMio-oo/PyDroidLab")
+                        )
+                    )
+                } catch (_: Throwable) {
+                }
+            }) {
+                Text("GitHub 仓库 · NekoMio-oo/PyDroidLab")
+            }
+            Text(
+                text = "开源组件：Chaquopy（Apache-2.0）· sora-editor（Apache-2.0）· " +
+                    "jackpal Android-Terminal-Emulator（Apache-2.0）· JetBrains Mono（OFL）",
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
