@@ -32,6 +32,12 @@ data class AstSyntaxDiagnostic(
     val message: String
 )
 
+data class AstLinterWarning(
+    val line: Int,
+    val code: String,
+    val message: String
+)
+
 data class AstOutlineSymbol(
     val name: String,
     val kind: String,
@@ -39,9 +45,20 @@ data class AstOutlineSymbol(
     val column: Int
 )
 
+data class CodeMetrics(
+    val totalLines: Int = 0,
+    val codeLines: Int = 0,
+    val commentLines: Int = 0,
+    val blankLines: Int = 0,
+    val classCount: Int = 0,
+    val funcCount: Int = 0
+)
+
 data class AstAnalysisResult(
     val diagnostics: List<AstSyntaxDiagnostic> = emptyList(),
-    val outline: List<AstOutlineSymbol> = emptyList()
+    val warnings: List<AstLinterWarning> = emptyList(),
+    val outline: List<AstOutlineSymbol> = emptyList(),
+    val metrics: CodeMetrics = CodeMetrics()
 )
 
 data class RuntimeContextInfo(
@@ -55,10 +72,6 @@ data class RuntimeContextInfo(
     val loadedModulesCount: Int = 0
 )
 
-/**
- * Manages background Python script execution, interactive REPL, AST static analysis,
- * runtime context diagnostics, and pip operations via Chaquopy.
- */
 class PythonExecutor(
     val terminal: TerminalEmulator,
     private val workspaceDir: File,
@@ -69,14 +82,11 @@ class PythonExecutor(
     private val isExecuting = AtomicBoolean(false)
     private var currentThread: Thread? = null
 
-    /**
-     * Runs the given Python source code on a dedicated background worker thread,
-     * streaming stdout/stderr and interactive `input()` requests through [terminal].
-     */
     fun runScript(
         scope: CoroutineScope,
         code: String,
         scriptFile: File,
+        cliArgs: String = "",
         onComplete: (exitCode: Int, elapsedMs: Long) -> Unit = { _, _ -> }
     ): Job? {
         if (!isExecuting.compareAndSet(false, true)) {
@@ -84,7 +94,8 @@ class PythonExecutor(
             return null
         }
 
-        terminal.resetForNewSession(scriptFile.name)
+        val bannerTitle = if (cliArgs.isBlank()) scriptFile.name else "${scriptFile.name} $cliArgs"
+        terminal.resetForNewSession(bannerTitle)
 
         return scope.launch(Dispatchers.IO) {
             currentThread = Thread.currentThread()
@@ -102,7 +113,8 @@ class PythonExecutor(
                     workspaceDir.absolutePath,
                     userSitePackagesDir.absolutePath,
                     bridgeHost,
-                    hardwareBridge
+                    hardwareBridge,
+                    cliArgs
                 )
                 val resultMap = resultObj.asMap()
                 val pyExit = resultMap[py.builtins.callAttr("str", "exit_code")]
@@ -121,9 +133,6 @@ class PythonExecutor(
         }
     }
 
-    /**
-     * Evaluates a single line in the persistent interactive Python REPL (`code.InteractiveConsole`).
-     */
     fun evalReplLine(
         scope: CoroutineScope,
         line: String,
@@ -167,9 +176,6 @@ class PythonExecutor(
         }
     }
 
-    /**
-     * Performs fast background AST syntax checking and extracts `class` / `def` outline symbols.
-     */
     suspend fun analyzeCodeAst(code: String, fileName: String): AstAnalysisResult = withContext(Dispatchers.IO) {
         runCatching {
             val py = Python.getInstance()
@@ -191,6 +197,19 @@ class PythonExecutor(
                 )
             }
 
+            val warnArr = root.optJSONArray("warnings") ?: JSONArray()
+            val warnings = ArrayList<AstLinterWarning>(warnArr.length())
+            for (i in 0 until warnArr.length()) {
+                val w = warnArr.getJSONObject(i)
+                warnings.add(
+                    AstLinterWarning(
+                        line = w.optInt("line", 1),
+                        code = w.optString("code", "W000"),
+                        message = w.optString("message", "")
+                    )
+                )
+            }
+
             val outArr = root.optJSONArray("outline") ?: JSONArray()
             val outline = ArrayList<AstOutlineSymbol>(outArr.length())
             for (i in 0 until outArr.length()) {
@@ -205,13 +224,25 @@ class PythonExecutor(
                 )
             }
 
-            AstAnalysisResult(diagnostics = diagnostics, outline = outline)
+            val mObj = root.optJSONObject("metrics") ?: JSONObject()
+            val metrics = CodeMetrics(
+                totalLines = mObj.optInt("total_lines", 0),
+                codeLines = mObj.optInt("code_lines", 0),
+                commentLines = mObj.optInt("comment_lines", 0),
+                blankLines = mObj.optInt("blank_lines", 0),
+                classCount = mObj.optInt("class_count", 0),
+                funcCount = mObj.optInt("func_count", 0)
+            )
+
+            AstAnalysisResult(
+                diagnostics = diagnostics,
+                warnings = warnings,
+                outline = outline,
+                metrics = metrics
+            )
         }.getOrElse { AstAnalysisResult() }
     }
 
-    /**
-     * Queries TinaIDE-style runtime context diagnostics (Python version, ABI, cwd, sys.path).
-     */
     suspend fun getRuntimeDiagnostics(invalidateCache: Boolean = false): RuntimeContextInfo = withContext(Dispatchers.IO) {
         runCatching {
             val py = Python.getInstance()
@@ -241,9 +272,23 @@ class PythonExecutor(
         }.getOrElse { RuntimeContextInfo() }
     }
 
-    /**
-     * Stops the currently running script via both queue interrupt and CPython async exception injection.
-     */
+    suspend fun formatPythonCode(code: String, tabWidth: Int): String = withContext(Dispatchers.IO) {
+        runCatching {
+            val py = Python.getInstance()
+            val runnerModule = py.getModule("pydroid_runner")
+            val res = runnerModule.callAttr("format_python_code", code, tabWidth).asMap()
+            res[py.builtins.callAttr("str", "formatted")]?.toString() ?: code
+        }.getOrDefault(code)
+    }
+
+    fun inspectSqliteDb(dbPath: String): String {
+        return runCatching {
+            val py = Python.getInstance()
+            val runnerModule = py.getModule("pydroid_runner")
+            runnerModule.callAttr("inspect_sqlite_db", dbPath).toString()
+        }.getOrElse { "读取 SQLite 数据库失败: ${it.localizedMessage}" }
+    }
+
     fun stopRunningScript() {
         if (!isExecuting.get()) return
         terminal.sendInterruptSignal()
@@ -320,9 +365,10 @@ class PythonExecutor(
     ): PipOperationResult {
         return runCatching {
             val py = Python.getInstance()
-            val pipModule = py.getModule("pip_manager")
+            val pipModule = py.getModule("pydroid_runner")
+            val pipMgr = py.getModule("pip_manager")
             val logger = PipLogBridge(onLog)
-            val res = pipModule.callAttr(
+            val res = pipMgr.callAttr(
                 "uninstall_package",
                 packageName,
                 userSitePackagesDir.absolutePath,
@@ -336,18 +382,4 @@ class PythonExecutor(
             PipOperationResult(false, e.localizedMessage ?: "Unknown uninstall error")
         }
     }
-
-    /**
-     * Formats Python source code (PEP 8 indentation, operator/comma spacing, blank lines)
-     * via `pydroid_runner.format_python_code`.
-     */
-    suspend fun formatPythonCode(code: String, tabWidth: Int): String = withContext(Dispatchers.IO) {
-        runCatching {
-            val py = Python.getInstance()
-            val runnerModule = py.getModule("pydroid_runner")
-            val res = runnerModule.callAttr("format_python_code", code, tabWidth).asMap()
-            res[py.builtins.callAttr("str", "formatted")]?.toString() ?: code
-        }.getOrDefault(code)
-    }
-
 }

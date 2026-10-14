@@ -10,9 +10,12 @@ import com.pydroidlab.app.data.SampleRepository
 import com.pydroidlab.app.data.SettingsRepository
 import com.pydroidlab.app.data.ThemeMode
 import com.pydroidlab.app.data.WorkspaceFileItem
+import com.pydroidlab.app.editor.IdeColorTheme
 import com.pydroidlab.app.runtime.AndroidHardwareBridge
+import com.pydroidlab.app.runtime.AstLinterWarning
 import com.pydroidlab.app.runtime.AstOutlineSymbol
 import com.pydroidlab.app.runtime.AstSyntaxDiagnostic
+import com.pydroidlab.app.runtime.CodeMetrics
 import com.pydroidlab.app.runtime.InstalledPackage
 import com.pydroidlab.app.runtime.PythonExecutor
 import com.pydroidlab.app.runtime.RuntimeContextInfo
@@ -38,9 +41,6 @@ enum class NavTab(val label: String) {
     SETTINGS("设置")
 }
 
-/**
- * Represents a single open tab in the TinaIDE-inspired Multi-Tab bar.
- */
 data class EditorTabItem(
     val id: String,
     val file: File,
@@ -68,8 +68,11 @@ data class EditorUiState(
     val replaceText: String = "",
     val caseSensitiveSearch: Boolean = false,
     val regexSearch: Boolean = false,
+    val cliArgs: String = "",
     val syntaxDiagnostics: List<AstSyntaxDiagnostic> = emptyList(),
+    val linterWarnings: List<AstLinterWarning> = emptyList(),
     val outlineSymbols: List<AstOutlineSymbol> = emptyList(),
+    val codeMetrics: CodeMetrics = CodeMetrics(),
     val runtimeContextInfo: RuntimeContextInfo = RuntimeContextInfo(),
     val jumpToLineRequest: Pair<Int, Long>? = null,
     val statusBanner: String? = null
@@ -177,7 +180,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isReplMode.value = enabled
         if (enabled && terminalSnapshot.value.lines.isEmpty()) {
             terminalEmulator.writeSystemMessage(
-                "Python 3 Interactive REPL 模式 (输入表达式回车即求值，如 2 ** 10 或 import this)",
+                "Python 3 Interactive REPL 模式 (直接输入表达式回车即求值，如 2 ** 10 或 import this)",
                 isError = false
             )
         }
@@ -298,11 +301,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun scheduleAstAnalysis(code: String, fileName: String) {
         astAnalysisJob?.cancel()
         astAnalysisJob = viewModelScope.launch {
-            delay(320L)
+            delay(300L)
             val analysis = pythonExecutor.analyzeCodeAst(code, fileName)
             _editorState.value = _editorState.value.copy(
                 syntaxDiagnostics = analysis.diagnostics,
-                outlineSymbols = analysis.outline
+                linterWarnings = analysis.warnings,
+                outlineSymbols = analysis.outline,
+                codeMetrics = analysis.metrics
             )
         }
     }
@@ -312,7 +317,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val info = pythonExecutor.getRuntimeDiagnostics(invalidateCache = invalidateCache)
             _editorState.value = _editorState.value.copy(
                 runtimeContextInfo = info,
-                statusBanner = if (invalidateCache) "已清理并重载 Python 模块缓存 (importlib.invalidate_caches)" else _editorState.value.statusBanner
+                statusBanner = if (invalidateCache) "已清理并重载 Python 模块缓存" else _editorState.value.statusBanner
             )
         }
     }
@@ -357,8 +362,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun openFileInEditor(file: File) {
         val ext = file.extension.lowercase()
-        // If it's an image file in File Manager, pop up the built-in Zoomable Image Previewer!
-        if (ext in setOf("png", "jpg", "jpeg", "webp", "bmp")) {
+        // If it's an image or SQLite DB file, pop up the built-in Visualizer Dialog!
+        if (ext in setOf("png", "jpg", "jpeg", "webp", "bmp", "db", "sqlite", "sqlite3")) {
             _previewFile.value = file
             return
         }
@@ -470,7 +475,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-
     fun formatCurrentCode(onFormattedResult: (String) -> Unit) {
         val current = _editorState.value
         viewModelScope.launch {
@@ -490,8 +494,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Run, Interactive Input & REPL Actions ---
 
-    fun runCurrentScript() {
+    fun runCurrentScript(customCliArgs: String? = null) {
         val currentEditor = _editorState.value
+        val argsToUse = customCliArgs ?: currentEditor.cliArgs
+        if (customCliArgs != null) {
+            _editorState.value = currentEditor.copy(cliArgs = customCliArgs)
+        }
         val codeToRun = currentEditor.codeContent
         val scriptFile = currentEditor.activeFile ?: File(fileRepository.workspaceRoot, currentEditor.fileName)
 
@@ -514,7 +522,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pythonExecutor.runScript(
             scope = viewModelScope,
             code = codeToRun,
-            scriptFile = scriptFile
+            scriptFile = scriptFile,
+            cliArgs = argsToUse
         )
     }
 
@@ -767,8 +776,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch { settingsRepository.setThemeMode(mode) }
     }
 
+    fun setIdeColorTheme(theme: IdeColorTheme) {
+        viewModelScope.launch {
+            settingsRepository.setIdeColorThemeId(theme.id)
+            settingsRepository.setThemeMode(if (theme.isDark) ThemeMode.DARK else ThemeMode.LIGHT)
+        }
+    }
+
     fun setTerminalFullScreen(fullScreen: Boolean) {
         viewModelScope.launch { settingsRepository.setTerminalFullScreen(fullScreen) }
+    }
+
+    fun setTwoRowSymbolBar(enabled: Boolean) {
+        viewModelScope.launch { settingsRepository.setTwoRowSymbolBar(enabled) }
     }
 
     fun setEditorFontSize(sizeSp: Float) {

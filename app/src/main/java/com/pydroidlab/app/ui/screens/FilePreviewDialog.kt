@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,10 +53,12 @@ import java.io.File
 @Composable
 fun FilePreviewDialog(
     file: File,
+    sqliteInspector: ((String) -> String)? = null,
     onDismiss: () -> Unit
 ) {
     val ext = file.extension.lowercase()
     val isImage = ext in setOf("png", "jpg", "jpeg", "webp", "bmp")
+    val isSqlite = ext in setOf("db", "sqlite", "sqlite3")
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -66,13 +67,12 @@ fun FilePreviewDialog(
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
-                .height(520.dp),
+                .height(540.dp),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Header
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -86,8 +86,13 @@ fun FilePreviewDialog(
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold
                         )
+                        val subtitle = when {
+                            isImage -> "图像预览 (支持双指缩放与拖拽) • ${file.length()} B"
+                            isSqlite -> "SQLite 数据库可视化预览 • ${file.length()} B"
+                            else -> "结构化数据预览 • ${file.length()} B"
+                        }
                         Text(
-                            text = if (isImage) "图像预览 (支持双指缩放与拖拽) • ${file.length()} B" else "结构化预览 • ${file.length()} B",
+                            text = subtitle,
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -102,7 +107,13 @@ fun FilePreviewDialog(
                 if (isImage) {
                     ZoomableImagePreview(file = file, modifier = Modifier.weight(1f))
                 } else {
-                    FormattedTextPreview(file = file, ext = ext, modifier = Modifier.weight(1f))
+                    FormattedTextPreview(
+                        file = file,
+                        ext = ext,
+                        isSqlite = isSqlite,
+                        sqliteInspector = sqliteInspector,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -196,22 +207,28 @@ private fun ZoomableImagePreview(
 private fun FormattedTextPreview(
     file: File,
     ext: String,
+    isSqlite: Boolean,
+    sqliteInspector: ((String) -> String)?,
     modifier: Modifier = Modifier
 ) {
     val formatted = remember(file.absolutePath, file.lastModified()) {
         runCatching {
-            val raw = file.readText(Charsets.UTF_8)
-            if (ext == "json") {
-                val trimmed = raw.trim()
-                if (trimmed.startsWith("{")) {
-                    JSONObject(trimmed).toString(2)
-                } else if (trimmed.startsWith("[")) {
-                    JSONArray(trimmed).toString(2)
+            if (isSqlite && sqliteInspector != null) {
+                sqliteInspector(file.absolutePath)
+            } else {
+                val raw = file.readText(Charsets.UTF_8)
+                if (ext == "json") {
+                    val trimmed = raw.trim()
+                    if (trimmed.startsWith("{")) {
+                        JSONObject(trimmed).toString(2)
+                    } else if (trimmed.startsWith("[")) {
+                        JSONArray(trimmed).toString(2)
+                    } else {
+                        raw
+                    }
                 } else {
                     raw
                 }
-            } else {
-                raw
             }
         }.getOrElse { "读取失败: ${it.localizedMessage}" }
     }

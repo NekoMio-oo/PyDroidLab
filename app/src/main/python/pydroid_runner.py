@@ -174,7 +174,8 @@ def execute_script(
     workspace_dir: str,
     user_site_packages: str,
     host,
-    hardware_bridge=None
+    hardware_bridge=None,
+    cli_args_str: str = ""
 ) -> dict:
     """
     Executes a Python script string with full stdout/stderr redirection, interactive input(),
@@ -199,6 +200,7 @@ def execute_script(
     orig_stderr = sys.stderr
     orig_stdin = sys.stdin
     orig_input = builtins.input
+    orig_argv = list(sys.argv)
 
     stdout_stream = _InteractiveOutStream(host, is_stderr=False)
     stderr_stream = _InteractiveOutStream(host, is_stderr=True)
@@ -227,6 +229,9 @@ def execute_script(
         sys.stderr = stderr_stream
         sys.stdin = stdin_stream
         builtins.input = _custom_input
+        import shlex
+        extra_argv = shlex.split(cli_args_str) if cli_args_str and cli_args_str.strip() else []
+        sys.argv = [script_path or "<untitled.py>"] + extra_argv
 
         exec_globals = {
             "__name__": "__main__",
@@ -265,6 +270,7 @@ def execute_script(
         sys.stderr = orig_stderr
         sys.stdin = orig_stdin
         builtins.input = orig_input
+        sys.argv = orig_argv
         with _state_lock:
             _running_thread_id = None
             _active_host = None
@@ -322,34 +328,74 @@ def analyze_code_ast(source_code: str, filename: str = "<editor.py>") -> str:
     """
     Performs fast static analysis using Python's `ast.parse`:
     1. Detects any SyntaxError / IndentationError with 1-based line, column, and error message.
-    2. Extracts top-level and nested `class` and `def` / `async def` symbols for the Code Outline drawer.
-    Returns a JSON string.
+    2. Detects Pydroid/Flake8-style Static Linter Warnings (mutable default arguments, bare `except:`,
+       shadowing built-in functions, pointless `pass` in non-empty blocks).
+    3. Extracts top-level and nested `class`, `def`, and global variable symbols for the Code Outline drawer.
+    4. Computes Code Metrics (total lines, code lines, comment lines, blank lines, function/class counts).
     """
     diagnostics = []
+    warnings = []
     outline = []
+
+    raw_lines = source_code.splitlines()
+    total_lines = len(raw_lines)
+    blank_lines = sum(1 for ln in raw_lines if not ln.strip())
+    comment_lines = sum(1 for ln in raw_lines if ln.strip().startswith("#"))
+    code_lines = max(0, total_lines - blank_lines - comment_lines)
+    class_count = 0
+    func_count = 0
 
     try:
         tree = ast.parse(source_code, filename=filename)
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
+                class_count += 1
+                bases = [ getattr(b, "id", "") for b in node.bases if getattr(b, "id", "") ]
+                base_str = f"({', '.join(bases)})" if bases else ""
                 outline.append({
-                    "name": f"class {node.name}",
+                    "name": f"class {node.name}{base_str}",
                     "kind": "class",
                     "line": getattr(node, "lineno", 1),
                     "col": getattr(node, "col_offset", 0) + 1
                 })
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                func_count += 1
                 args_list = [a.arg for a in node.args.args[:3]]
                 if len(node.args.args) > 3:
                     args_list.append("...")
+                prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
                 sig = f"{node.name}({', '.join(args_list)})"
                 outline.append({
-                    "name": f"def {sig}",
+                    "name": f"{prefix} {sig}",
                     "kind": "function",
                     "line": getattr(node, "lineno", 1),
                     "col": getattr(node, "col_offset", 0) + 1
                 })
+                # Linter Rule W0102: Mutable default argument (list, dict, set)
+                for default_val in node.args.defaults + node.args.kw_defaults:
+                    if isinstance(default_val, (ast.List, ast.Dict, ast.Set)):
+                        warnings.append({
+                            "line": getattr(node, "lineno", 1),
+                            "code": "W0102",
+                            "message": f"函数 '{node.name}' 使用了可变默认参数 (建议改用 None 初始化)"
+                        })
+            elif isinstance(node, ast.ExceptHandler):
+                if node.type is None:
+                    warnings.append({
+                        "line": getattr(node, "lineno", 1),
+                        "code": "E722",
+                        "message": "使用了裸 except: 捕获所有异常 (建议改为 except Exception as e:)"
+                    })
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and target.id in ("list", "dict", "str", "int", "set", "max", "min", "sum", "id", "type"):
+                        warnings.append({
+                            "line": getattr(node, "lineno", 1),
+                            "code": "A001",
+                            "message": f"变量名 '{target.id}' 覆盖了 Python 内置函数"
+                        })
         outline.sort(key=lambda x: x["line"])
+        warnings.sort(key=lambda x: x["line"])
     except SyntaxError as e:
         lineno = e.lineno or 1
         col = e.offset or 1
@@ -365,8 +411,53 @@ def analyze_code_ast(source_code: str, filename: str = "<editor.py>") -> str:
 
     return json.dumps({
         "diagnostics": diagnostics,
-        "outline": outline
+        "warnings": warnings,
+        "outline": outline,
+        "metrics": {
+            "total_lines": total_lines,
+            "code_lines": code_lines,
+            "comment_lines": comment_lines,
+            "blank_lines": blank_lines,
+            "class_count": class_count,
+            "func_count": func_count
+        }
     }, ensure_ascii=False)
+
+
+def inspect_sqlite_db(db_path: str) -> str:
+    """
+    Reads all tables, schemas, and up to 50 rows per table from a SQLite `.db` / `.sqlite` file
+    and returns a formatted report for the built-in FilePreviewDialog.
+    """
+    import sqlite3
+    if not os.path.isfile(db_path):
+        return "Database file not found."
+    out = []
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name;")
+        tables = cur.fetchall()
+        out.append(f"🗄️ SQLite 数据库文件: {os.path.basename(db_path)}")
+        out.append(f"共包含 {len(tables)} 张数据表\n" + "=" * 44)
+        for tname, tsql in tables:
+            out.append(f"\n📌 表名: {tname}")
+            if tsql:
+                out.append(f"DDL: {tsql}")
+            cur.execute(f"PRAGMA table_info('{tname}')")
+            cols = [row[1] for row in cur.fetchall()]
+            cur.execute(f"SELECT * FROM '{tname}' LIMIT 50")
+            rows = cur.fetchall()
+            out.append(f"字段 ({len(cols)}): {' | '.join(cols)}")
+            out.append("-" * 44)
+            for r in rows:
+                out.append(" | ".join(str(v) for v in r))
+            out.append(f"(共显示 {len(rows)} 行记录)")
+        return "\n".join(out)
+    except Exception as e:
+        return f"读取 SQLite 数据库失败: {e}"
+    finally:
+        conn.close()
 
 
 def get_runtime_diagnostics(workspace_dir: str, user_site_packages: str, invalidate_cache: bool = False) -> str:

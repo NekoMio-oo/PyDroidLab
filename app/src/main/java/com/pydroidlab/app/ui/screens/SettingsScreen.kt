@@ -12,7 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -20,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -27,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,13 +38,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pydroidlab.app.data.AppSettings
 import com.pydroidlab.app.data.ThemeMode
+import com.pydroidlab.app.editor.IdeColorTheme
 import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
     onThemeModeChanged: (ThemeMode) -> Unit,
+    onIdeColorThemeChanged: (IdeColorTheme) -> Unit,
     onTerminalFullScreenChanged: (Boolean) -> Unit,
+    onTwoRowSymbolBarChanged: (Boolean) -> Unit,
     onEditorFontSizeChanged: (Float) -> Unit,
     onTerminalFontSizeChanged: (Float) -> Unit,
     onTabWidthChanged: (Int) -> Unit,
@@ -58,12 +64,12 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "编辑器与运行环境设置",
+            text = "IDE 主题、按键与运行环境设置",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
 
-        // 1. Theme & Terminal Display Mode Card (Compact, equal-width buttons that never clip or stretch vertically)
+        // 1. 6 Flagship IDE Color Themes Card (One Dark Pro, Tokyo Night, Dracula, Monokai Pro, Catppuccin Mocha, GitHub Light)
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -74,38 +80,63 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "外观主题 (Theme)",
+                    text = "编辑器专业配色主题 (Acode / VS Code 主题)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
-
-                // 3 equal-width buttons: 跟随系统 | 浅色模式 | 深色模式
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ThemeMode.entries.forEach { mode ->
-                        SegmentedOptionButton(
-                            label = mode.label,
-                            selected = settings.themeMode == mode,
-                            onClick = { onThemeModeChanged(mode) },
+                IdeColorTheme.entries.forEach { ideTheme ->
+                    val isSelected = settings.ideColorThemeId == ideTheme.id
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(ideTheme.editorBg)
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) ideTheme.accentColor else ideTheme.textSecondary.copy(alpha = 0.3f),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { onIdeColorThemeChanged(ideTheme) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { onIdeColorThemeChanged(ideTheme) }
+                        )
+                        Text(
+                            text = ideTheme.displayName,
+                            color = ideTheme.textPrimary,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
                             modifier = Modifier.weight(1f)
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .background(ideTheme.accentColor, CircleShape)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .background(ideTheme.chromeBg, CircleShape)
+                                .border(1.dp, ideTheme.textSecondary, CircleShape)
                         )
                     }
                 }
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 Text(
-                    text = "运行终端显示方式 (Terminal Mode)",
+                    text = "终端显示方式 (Terminal Mode)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
-
-                // 2 equal-width buttons: 全屏终端 (默认) | 底部分屏抽屉
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -145,7 +176,6 @@ fun SettingsScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-                // Editor Font Size
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -166,7 +196,6 @@ fun SettingsScreen(
                     )
                 }
 
-                // Terminal Font Size
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -187,7 +216,6 @@ fun SettingsScreen(
                     )
                 }
 
-                // Tab Width (Placed cleanly on its own row with 3 equal-width buttons so 8 空格 is never squished!)
                 Text(
                     text = "Tab 缩进宽度 (Spaces)",
                     style = MaterialTheme.typography.bodyMedium,
@@ -223,10 +251,19 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "编辑器与运行选项",
+                    text = "编辑器增强选项",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
+
+                SettingToggleRow(
+                    title = "双层专业符号与快捷指令栏 (Pydroid 3 风格)",
+                    subtitle = "开启后底部同时显示「行操作/方向控制层」与「高频符号/关键字层」",
+                    checked = settings.twoRowSymbolBar,
+                    onCheckedChange = onTwoRowSymbolBarChanged
+                )
+
+                HorizontalDivider()
 
                 SettingToggleRow(
                     title = "显示行号 (Line Numbers)",

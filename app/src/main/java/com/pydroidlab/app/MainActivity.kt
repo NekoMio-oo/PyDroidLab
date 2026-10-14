@@ -377,7 +377,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                     onSubmitInput = viewModel::submitTerminalInput,
                     onJumpToLine = viewModel::requestJumpToLine,
                     onStopScript = viewModel::stopRunningScript,
-                    onRerunScript = viewModel::runCurrentScript,
+                    onRerunScript = { viewModel.runCurrentScript() },
                     onClearTerminal = viewModel::clearTerminal,
                     onCloseSheet = { viewModel.setTerminalExpanded(false) },
                     modifier = Modifier
@@ -410,7 +410,8 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                                     onTextChanged = viewModel::onEditorTextChanged,
                                     onCursorChanged = viewModel::onEditorCursorChanged,
                                     onFormatCode = viewModel::formatCurrentCode,
-                                    onRunClicked = viewModel::runCurrentScript,
+                                    onRunClicked = { viewModel.runCurrentScript() },
+                                    onRunWithArgsClicked = { args -> viewModel.runCurrentScript(args) },
                                     onStopClicked = viewModel::stopRunningScript,
                                     onSaveClicked = { viewModel.saveCurrentFile() },
                                     onSaveAsClicked = viewModel::saveCurrentFileAs,
@@ -420,6 +421,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                                     onToggleTerminal = {
                                         viewModel.setTerminalExpanded(!isTerminalExpanded)
                                     },
+                                    onSelectIdeTheme = viewModel::setIdeColorTheme,
                                     onRefreshRuntimeDiagnostics = viewModel::refreshRuntimeDiagnostics,
                                     onConsumeJumpToLine = viewModel::consumeJumpToLine
                                 )
@@ -461,7 +463,9 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                                 SettingsScreen(
                                     settings = settings,
                                     onThemeModeChanged = viewModel::setThemeMode,
+                                    onIdeColorThemeChanged = viewModel::setIdeColorTheme,
                                     onTerminalFullScreenChanged = viewModel::setTerminalFullScreen,
+                                    onTwoRowSymbolBarChanged = viewModel::setTwoRowSymbolBar,
                                     onEditorFontSizeChanged = viewModel::setEditorFontSize,
                                     onTerminalFontSizeChanged = viewModel::setTerminalFontSize,
                                     onTabWidthChanged = viewModel::setTabWidth,
@@ -492,7 +496,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                             onSubmitInput = viewModel::submitTerminalInput,
                             onJumpToLine = viewModel::requestJumpToLine,
                             onStopScript = viewModel::stopRunningScript,
-                            onRerunScript = viewModel::runCurrentScript,
+                            onRerunScript = { viewModel.runCurrentScript() },
                             onClearTerminal = viewModel::clearTerminal,
                             onCloseSheet = { viewModel.setTerminalExpanded(false) },
                             modifier = Modifier.height(275.dp)
@@ -507,6 +511,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
     previewFile?.let { file ->
         FilePreviewDialog(
             file = file,
+            sqliteInspector = viewModel.pythonExecutor::inspectSqliteDb,
             onDismiss = viewModel::dismissPreviewFile
         )
     }

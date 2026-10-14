@@ -11,7 +11,7 @@ class PyDroidLabUnitTest {
 
     @Test
     fun verifyFourteenBuiltInSamplesExist() {
-        assertEquals(14, SampleRepository.samples.size)
+        assertEquals(15, SampleRepository.samples.size)
         assertTrue(SampleRepository.samples.any { it.usesInput })
         assertTrue(SampleRepository.samples.any { it.code.contains("import requests") })
         assertTrue(SampleRepository.samples.any { it.code.contains("import android_app") })

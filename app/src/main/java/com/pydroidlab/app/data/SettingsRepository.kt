@@ -21,8 +21,10 @@ enum class ThemeMode(val label: String) {
 }
 
 data class AppSettings(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeMode: ThemeMode = ThemeMode.DARK,
+    val ideColorThemeId: String = "one_dark_pro",
     val terminalFullScreen: Boolean = true,
+    val twoRowSymbolBar: Boolean = true,
     val editorFontSizeSp: Float = 15f,
     val terminalFontSizeSp: Float = 13f,
     val tabWidth: Int = 4,
@@ -36,7 +38,9 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val IDE_COLOR_THEME_ID = stringPreferencesKey("ide_color_theme_id")
         val TERMINAL_FULL_SCREEN = booleanPreferencesKey("terminal_full_screen")
+        val TWO_ROW_SYMBOL_BAR = booleanPreferencesKey("two_row_symbol_bar")
         val EDITOR_FONT_SIZE = floatPreferencesKey("editor_font_size")
         val TERMINAL_FONT_SIZE = floatPreferencesKey("terminal_font_size")
         val TAB_WIDTH = intPreferencesKey("tab_width")
@@ -47,11 +51,13 @@ class SettingsRepository(private val context: Context) {
     }
 
     val settingsFlow: Flow<AppSettings> = context.dataStore.data.map { prefs ->
-        val themeStr = prefs[Keys.THEME_MODE] ?: ThemeMode.SYSTEM.name
-        val theme = runCatching { ThemeMode.valueOf(themeStr) }.getOrDefault(ThemeMode.SYSTEM)
+        val themeStr = prefs[Keys.THEME_MODE] ?: ThemeMode.DARK.name
+        val theme = runCatching { ThemeMode.valueOf(themeStr) }.getOrDefault(ThemeMode.DARK)
         AppSettings(
             themeMode = theme,
+            ideColorThemeId = prefs[Keys.IDE_COLOR_THEME_ID] ?: "one_dark_pro",
             terminalFullScreen = prefs[Keys.TERMINAL_FULL_SCREEN] ?: true,
+            twoRowSymbolBar = prefs[Keys.TWO_ROW_SYMBOL_BAR] ?: true,
             editorFontSizeSp = (prefs[Keys.EDITOR_FONT_SIZE] ?: 15f).coerceIn(10f, 28f),
             terminalFontSizeSp = (prefs[Keys.TERMINAL_FONT_SIZE] ?: 13f).coerceIn(10f, 24f),
             tabWidth = (prefs[Keys.TAB_WIDTH] ?: 4).let { if (it in listOf(2, 4, 8)) it else 4 },
@@ -66,8 +72,16 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.THEME_MODE] = mode.name }
     }
 
+    suspend fun setIdeColorThemeId(themeId: String) {
+        context.dataStore.edit { it[Keys.IDE_COLOR_THEME_ID] = themeId }
+    }
+
     suspend fun setTerminalFullScreen(fullScreen: Boolean) {
         context.dataStore.edit { it[Keys.TERMINAL_FULL_SCREEN] = fullScreen }
+    }
+
+    suspend fun setTwoRowSymbolBar(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.TWO_ROW_SYMBOL_BAR] = enabled }
     }
 
     suspend fun setEditorFontSize(sizeSp: Float) {

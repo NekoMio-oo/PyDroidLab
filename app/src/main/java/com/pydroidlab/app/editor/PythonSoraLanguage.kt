@@ -73,20 +73,53 @@ class PythonSoraLanguage(
 
         val lowerPrefix = prefix.lowercase()
         val items = mutableListOf<CompletionItem>()
+        val seen = HashSet<String>()
 
-        for (kw in PYTHON_KEYWORDS) {
-            if (kw.startsWith(lowerPrefix)) {
-                items.add(SimpleCompletionItem(kw, "Python Keyword", prefix.length, kw))
+        // 1. Dynamically scan user-defined identifiers (variables, defs, classes, imports) from current file
+        runCatching {
+            val lineCount = content.lineCount.coerceAtMost(800)
+            val identRegex = Regex("""\b([a-zA-Z_][a-zA-Z0-9_]{2,})\b""")
+            for (ln in 0 until lineCount) {
+                val lineText = content.getLine(ln)
+                for (m in identRegex.findAll(lineText)) {
+                    val word = m.groupValues[1]
+                    if (word != prefix &&
+                        word !in PYTHON_KEYWORDS &&
+                        word !in PYTHON_BUILTINS &&
+                        word.lowercase().startsWith(lowerPrefix) &&
+                        seen.add(word)
+                    ) {
+                        items.add(SimpleCompletionItem(word, "当前脚本符号 (Symbol)", prefix.length, word))
+                    }
+                }
             }
         }
-        for (builtin in PYTHON_BUILTINS) {
-            if (builtin.startsWith(lowerPrefix)) {
-                items.add(SimpleCompletionItem(builtin, "Built-in Function", prefix.length, "$builtin()"))
-            }
-        }
+
+        // 2. Code Snippets
         for ((trigger, desc, snippet) in PYTHON_SNIPPETS) {
-            if (trigger.startsWith(lowerPrefix)) {
-                items.add(SimpleCompletionItem(trigger, desc, prefix.length, snippet))
+            if (trigger.startsWith(lowerPrefix) && seen.add(trigger)) {
+                items.add(SimpleCompletionItem(trigger, "代码片段 • $desc", prefix.length, snippet))
+            }
+        }
+
+        // 3. Python Keywords
+        for (kw in PYTHON_KEYWORDS) {
+            if (kw.lowercase().startsWith(lowerPrefix) && seen.add(kw)) {
+                items.add(SimpleCompletionItem(kw, "Python 关键字 (Keyword)", prefix.length, kw))
+            }
+        }
+
+        // 4. Built-in Functions
+        for (builtin in PYTHON_BUILTINS) {
+            if (builtin.startsWith(lowerPrefix) && seen.add(builtin)) {
+                items.add(SimpleCompletionItem(builtin, "内置函数 (Built-in)", prefix.length, "$builtin()"))
+            }
+        }
+
+        // 5. Common Modules (`android_app`, `requests`, `json`, `os`, `sys`, `math`, `re`, `datetime`, `sqlite3`)
+        for (mod in COMMON_MODULES) {
+            if (mod.startsWith(lowerPrefix) && seen.add(mod)) {
+                items.add(SimpleCompletionItem(mod, "常用模块 (Module)", prefix.length, mod))
             }
         }
 
@@ -119,7 +152,16 @@ class PythonSoraLanguage(
             Triple("main", "if __name__ == '__main__':", "if __name__ == \"__main__\":\n    "),
             Triple("def", "Define a function", "def func_name():\n    pass"),
             Triple("fori", "For loop with range()", "for i in range(10):\n    "),
-            Triple("tryex", "try / except block", "try:\n    pass\nexcept Exception as e:\n    print(e)")
+            Triple("tryex", "try / except block", "try:\n    pass\nexcept Exception as e:\n    print(e)"),
+            Triple("withopen", "with open() as f:", "with open(\"data.txt\", \"r\", encoding=\"utf-8\") as f:\n    text = f.read()"),
+            Triple("reqget", "requests.get JSON", "resp = requests.get(\"https://httpbin.org/get\", timeout=8)\nprint(resp.json())"),
+            Triple("classdef", "class with __init__", "class MyClass:\n    def __init__(self):\n        pass")
+        )
+
+        val COMMON_MODULES = listOf(
+            "android_app", "requests", "numpy", "pandas", "json", "os", "sys",
+            "math", "random", "re", "time", "datetime", "sqlite3", "collections",
+            "itertools", "functools", "pathlib", "csv", "hashlib", "threading"
         )
     }
 }
