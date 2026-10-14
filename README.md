@@ -12,14 +12,14 @@ PyDroidLab 是一款对标 Pydroid 3 的移动端 Python 3 集成开发环境（
 | **Android SDK** | `compileSdk = 34`、`targetSdk = 34`、`minSdk = 26` (Android 8.0 ~ Android 14+) |
 | **开发语言与 UI** | Kotlin `1.9.24` + Jetpack Compose BOM `2024.06.00` (Material 3) |
 | **代码编辑器组件** | `io.github.Rosemoe.sora-editor:editor:0.23.4` + `language-textmate:0.23.4` |
-| **Python 解释器引擎** | Chaquopy `15.0.1`（MIT 开源协议，内置 CPython `3.10` 运行时与 `pip`） |
+| **Python 解释器引擎** | Chaquopy `17.1.0`（MIT 开源协议，内置 CPython `3.10` 运行时与 `pip`） |
 | **交互式终端控制台** | `:terminal-emulator` 模块（支持 VT100/ANSI 转义序列解析、阻塞式 `stdin` 行缓冲队列） |
 
 ## 2. 项目目录结构
 
 ```text
 PyDroidLab/
-├── build.gradle.kts                   # 根工程 Gradle 配置（AGP 8.4.2, Kotlin 1.9.24, Chaquopy 15.0.1）
+├── build.gradle.kts                   # 根工程 Gradle 配置（AGP 8.4.2, Kotlin 1.9.24, Chaquopy 17.1.0）
 ├── settings.gradle.kts                # 仓库配置（Google, MavenCentral, JitPack, Chaquopy Maven）与模块声明
 ├── gradle.properties                  # JVM 参数与科学计算包（numpy/pandas）构建期预装开关
 ├── gradlew / gradlew.bat              # 支持自动引导下载 Gradle 8.7 的 Wrapper 脚本
@@ -68,7 +68,7 @@ PyDroidLab/
 
 在 `app/build.gradle.kts` 与 `gradle.properties` 中，我们完成了如下针对移动端 Python IDE 的配置：
 
-* **开源许可**：采用 Chaquopy `15.0.1`（自 15.0 起已全面采用 **MIT 开源许可证**，无论开源还是商业闭源均免费且无运行时授权弹窗）。
+* **开源许可**：采用 Chaquopy `17.1.0`（自 15.0 起已全面采用 **MIT 开源许可证**，无论开源还是商业闭源均免费且无运行时授权弹窗）。
 * **ABI 架构配置**：默认开启 `arm64-v8a`（主流 Android 14 真机）与 `x86_64`（PC 端 Android 模拟器）。
 * **科学计算库（`numpy` / `pandas`）一键开关**：在根目录 `gradle.properties` 中提供了 `pydroidlab.preinstallScientific` 属性：
   * `pydroidlab.preinstallScientific=true`（**默认开启**）：在构建期通过 Chaquopy 官方预编译二进制轮子源打包 `numpy`、`pandas` 及 `requests`，用户在手机端离线即可直接 `import numpy as np`、`import pandas as pd`。

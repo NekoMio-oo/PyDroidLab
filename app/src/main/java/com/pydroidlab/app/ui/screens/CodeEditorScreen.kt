@@ -1809,7 +1809,7 @@ private fun OutlineAndContextSheetContent(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "CPython ${runtimeInfo.pythonVersion} (Chaquopy 15.0.1)",
+                                    text = "CPython ${runtimeInfo.pythonVersion} (Chaquopy 17.1.0)",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )

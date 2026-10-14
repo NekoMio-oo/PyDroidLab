@@ -69,7 +69,8 @@ chaquopy {
     defaultConfig {
         // Python 3.10 provides full pre-compiled wheel support in Chaquopy's repository
         // (including numpy, pandas, requests, etc.) and includes pip for runtime package installation.
-        version = "3.10"
+        val pyVer = project.findProperty("pydroidlab.pythonVersion")?.toString() ?: "3.10"
+        version = pyVer
 
         pip {
             // Core runtime & HTTP dependencies pre-installed so pip and requests work out of the box
