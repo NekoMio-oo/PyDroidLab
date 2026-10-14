@@ -482,7 +482,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (formatted != current.codeContent) {
                 onFormattedResult(formatted)
                 _editorState.value = _editorState.value.copy(
-                    statusBanner = "✨ 代码已按 PEP 8 规范格式化"
+                    statusBanner = "已格式化"
                 )
             } else {
                 _editorState.value = _editorState.value.copy(

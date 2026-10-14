@@ -12,18 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -33,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.pydroidlab.app.data.AppSettings
@@ -60,291 +53,198 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "IDE 主题、按键与运行环境设置",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+        // 1. 外观与配色
+        SectionTitle("界面外观")
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ThemeMode.entries.forEach { mode ->
+                MinimalSegmentButton(
+                    label = mode.label,
+                    selected = settings.themeMode == mode,
+                    onClick = { onThemeModeChanged(mode) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        SectionTitle("编辑器配色方案")
+
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            IdeColorTheme.entries.chunked(3).forEach { rowThemes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowThemes.forEach { ideTheme ->
+                        MinimalSegmentButton(
+                            label = ideTheme.displayName,
+                            selected = settings.ideColorThemeId == ideTheme.id,
+                            onClick = { onIdeColorThemeChanged(ideTheme) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(thickness = 0.5.dp)
+
+        // 2. 终端模式与缩进
+        SectionTitle("终端布局")
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            MinimalSegmentButton(
+                label = "全屏终端",
+                selected = settings.terminalFullScreen,
+                onClick = { onTerminalFullScreenChanged(true) },
+                modifier = Modifier.weight(1f)
+            )
+            MinimalSegmentButton(
+                label = "底部分屏",
+                selected = !settings.terminalFullScreen,
+                onClick = { onTerminalFullScreenChanged(false) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        SectionTitle("缩进空格数")
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(2, 4, 8).forEach { width ->
+                MinimalSegmentButton(
+                    label = "$width 空格",
+                    selected = settings.tabWidth == width,
+                    onClick = { onTabWidthChanged(width) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        HorizontalDivider(thickness = 0.5.dp)
+
+        // 3. 字号调节
+        SectionTitle("字号大小")
+
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("编辑器字号", fontSize = 14.sp)
+                Text(
+                    "${settings.editorFontSizeSp.roundToInt()} sp",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = settings.editorFontSizeSp,
+                onValueChange = { onEditorFontSizeChanged(it.roundToInt().toFloat()) },
+                valueRange = 10f..28f,
+                steps = 17
+            )
+        }
+
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("终端字号", fontSize = 14.sp)
+                Text(
+                    "${settings.terminalFontSizeSp.roundToInt()} sp",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = settings.terminalFontSizeSp,
+                onValueChange = { onTerminalFontSizeChanged(it.roundToInt().toFloat()) },
+                valueRange = 10f..24f,
+                steps = 13
+            )
+        }
+
+        HorizontalDivider(thickness = 0.5.dp)
+
+        // 4. 行为开关
+        SectionTitle("编辑器行为")
+
+        MinimalToggleRow(
+            title = "显示行号",
+            checked = settings.showLineNumbers,
+            onCheckedChange = onShowLineNumbersChanged
         )
 
-        // 1. 6 Flagship IDE Color Themes Card (One Dark Pro, Tokyo Night, Dracula, Monokai Pro, Catppuccin Mocha, GitHub Light)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "编辑器专业配色主题 (Acode / VS Code 主题)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                IdeColorTheme.entries.forEach { ideTheme ->
-                    val isSelected = settings.ideColorThemeId == ideTheme.id
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(ideTheme.editorBg)
-                            .border(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) ideTheme.accentColor else ideTheme.textSecondary.copy(alpha = 0.3f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable { onIdeColorThemeChanged(ideTheme) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        RadioButton(
-                            selected = isSelected,
-                            onClick = { onIdeColorThemeChanged(ideTheme) }
-                        )
-                        Text(
-                            text = ideTheme.displayName,
-                            color = ideTheme.textPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(14.dp)
-                                .background(ideTheme.accentColor, CircleShape)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .size(14.dp)
-                                .background(ideTheme.chromeBg, CircleShape)
-                                .border(1.dp, ideTheme.textSecondary, CircleShape)
-                        )
-                    }
-                }
+        MinimalToggleRow(
+            title = "自动折行",
+            checked = settings.wordWrap,
+            onCheckedChange = onWordWrapChanged
+        )
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+        MinimalToggleRow(
+            title = "运行前自动保存",
+            checked = settings.autoSaveOnRun,
+            onCheckedChange = onAutoSaveOnRunChanged
+        )
 
-                Text(
-                    text = "终端显示方式 (Terminal Mode)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    SegmentedOptionButton(
-                        label = "全屏终端 (默认)",
-                        selected = settings.terminalFullScreen,
-                        onClick = { onTerminalFullScreenChanged(true) },
-                        modifier = Modifier.weight(1f)
-                    )
-                    SegmentedOptionButton(
-                        label = "底部分屏半屏",
-                        selected = !settings.terminalFullScreen,
-                        onClick = { onTerminalFullScreenChanged(false) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
+        HorizontalDivider(thickness = 0.5.dp)
 
-        // 2. Font Size & Tab Width Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "排版与缩进 (Typography & Indentation)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
+        // 5. 镜像源
+        SectionTitle("pip 镜像源")
 
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("代码编辑器字体大小", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${settings.editorFontSizeSp.roundToInt()} sp",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Slider(
-                        value = settings.editorFontSizeSp,
-                        onValueChange = { onEditorFontSizeChanged(it.roundToInt().toFloat()) },
-                        valueRange = 10f..28f,
-                        steps = 17
-                    )
-                }
+        OutlinedTextField(
+            value = settings.customPipIndexUrl,
+            onValueChange = onCustomPipIndexChanged,
+            placeholder = { Text("默认官方源，可填 https://pypi.tuna.tsinghua.edu.cn/simple", fontSize = 12.sp) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
 
-                Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("终端控制台字体大小", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "${settings.terminalFontSizeSp.roundToInt()} sp",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Slider(
-                        value = settings.terminalFontSizeSp,
-                        onValueChange = { onTerminalFontSizeChanged(it.roundToInt().toFloat()) },
-                        valueRange = 10f..24f,
-                        steps = 13
-                    )
-                }
-
-                Text(
-                    text = "Tab 缩进宽度 (Spaces)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(2, 4, 8).forEach { width ->
-                        SegmentedOptionButton(
-                            label = "$width 空格",
-                            selected = settings.tabWidth == width,
-                            onClick = { onTabWidthChanged(width) },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-            }
-        }
-
-        // 3. Editor Behavior Toggles
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = "编辑器增强选项",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                SettingToggleRow(
-                    title = "双层专业符号与快捷指令栏 (Pydroid 3 风格)",
-                    subtitle = "开启后底部同时显示「行操作/方向控制层」与「高频符号/关键字层」",
-                    checked = settings.twoRowSymbolBar,
-                    onCheckedChange = onTwoRowSymbolBarChanged
-                )
-
-                HorizontalDivider()
-
-                SettingToggleRow(
-                    title = "显示行号 (Line Numbers)",
-                    subtitle = "在代码编辑器左侧固定显示行号栏",
-                    checked = settings.showLineNumbers,
-                    onCheckedChange = onShowLineNumbersChanged
-                )
-
-                HorizontalDivider()
-
-                SettingToggleRow(
-                    title = "自动折行 (Word Wrap)",
-                    subtitle = "长代码行超出屏幕宽度时自动换行显示",
-                    checked = settings.wordWrap,
-                    onCheckedChange = onWordWrapChanged
-                )
-
-                HorizontalDivider()
-
-                SettingToggleRow(
-                    title = "运行前自动保存文件",
-                    subtitle = "点击运行按钮时自动将缓冲区写入当前 .py 文件",
-                    checked = settings.autoSaveOnRun,
-                    onCheckedChange = onAutoSaveOnRunChanged
-                )
-            }
-        }
-
-        // 4. Custom PyPI Mirror Configuration
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "pip 镜像源配置 (可选)",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "留空默认使用官方 PyPI + Chaquopy Android 预编译源；国内网络环境可填入清华源 https://pypi.tuna.tsinghua.edu.cn/simple",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = settings.customPipIndexUrl,
-                    onValueChange = onCustomPipIndexChanged,
-                    placeholder = { Text("https://pypi.tuna.tsinghua.edu.cn/simple") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun SegmentedOptionButton(
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
+private fun MinimalSegmentButton(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val bgColor = if (selected) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.primaryContainer
     } else {
         MaterialTheme.colorScheme.surface
     }
-    val contentColor = if (selected) {
-        MaterialTheme.colorScheme.onPrimary
+    val textColor = if (selected) {
+        MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.onSurface
+        MaterialTheme.colorScheme.onSurfaceVariant
     }
     val borderColor = if (selected) {
         MaterialTheme.colorScheme.primary
@@ -355,44 +255,40 @@ private fun SegmentedOptionButton(
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .height(36.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(bgColor)
-            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .border(0.8.dp, borderColor, RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 6.dp)
     ) {
         Text(
             text = label,
-            color = contentColor,
+            color = textColor,
             fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1
         )
     }
 }
 
 @Composable
-private fun SettingToggleRow(
+private fun MinimalToggleRow(
     title: String,
-    subtitle: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = title,
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f)
+        )
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

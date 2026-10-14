@@ -74,6 +74,8 @@ chaquopy {
 
         pip {
             // Core runtime & HTTP dependencies pre-installed so pip and requests work out of the box
+            install("pip")
+            install("wheel")
             install("six")
             install("certifi")
             install("charset-normalizer")

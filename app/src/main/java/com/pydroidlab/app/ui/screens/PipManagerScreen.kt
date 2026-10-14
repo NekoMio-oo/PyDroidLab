@@ -1,6 +1,8 @@
 package com.pydroidlab.app.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,24 +20,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudDownload
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SystemUpdateAlt
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -71,155 +62,108 @@ fun PipManagerScreen(
     onRefreshList: () -> Unit
 ) {
     var packageInput by remember { mutableStateOf("") }
-    var showLogConsole by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 1. Header & Install Bar
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-            ),
-            modifier = Modifier.fillMaxWidth()
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = packageInput,
+                    onValueChange = { packageInput = it },
+                    placeholder = { Text("输入包名，如 requests", fontSize = 13.sp) },
+                    singleLine = true,
+                    enabled = !pipState.isBusy,
+                    modifier = Modifier.weight(1f)
+                )
+
+                TextButton(
+                    onClick = {
+                        if (packageInput.isNotBlank()) {
+                            onInstallPackage(packageInput.trim(), false)
+                        }
+                    },
+                    enabled = !pipState.isBusy && packageInput.isNotBlank()
+                ) {
+                    Text("安装", fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            // Minimal quick-install tags
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "pip 第三方库管理",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "安装目录: $userSitePackagesPath",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp
-                        )
-                    }
-                    IconButton(onClick = onRefreshList, enabled = !pipState.isBusy) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新已安装列表")
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = packageInput,
-                        onValueChange = { packageInput = it },
-                        label = { Text("输入包名 (如 requests 或 requests==2.31.0)") },
-                        singleLine = true,
-                        enabled = !pipState.isBusy,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Button(
-                        onClick = {
-                            if (packageInput.isNotBlank()) {
-                                showLogConsole = true
-                                onInstallPackage(packageInput.trim(), false)
-                            }
-                        },
-                        enabled = !pipState.isBusy && packageInput.isNotBlank()
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("安装")
-                    }
-                }
-
-                // Quick install chips
-                Text(
-                    text = "常用库一键安装 / 升级：",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    RECOMMENDED_PACKAGES.forEach { pkg ->
-                        AssistChip(
-                            onClick = {
+                RECOMMENDED_PACKAGES.forEach { pkg ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+                            .clickable(enabled = !pipState.isBusy) {
                                 packageInput = pkg
-                                showLogConsole = true
                                 onInstallPackage(pkg, false)
-                            },
-                            enabled = !pipState.isBusy,
-                            label = { Text(pkg, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
+                            }
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Text(
+                            text = pkg,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
-        }
 
-        // 2. Progress / Live Pip Output Log
-        if (pipState.isBusy || pipState.pipLogs.isNotEmpty()) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+            if (pipState.isBusy || pipState.pipLogs.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF0D1117))
+                        .padding(10.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         if (pipState.isBusy) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color(0xFF38BDF8)
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 1.5.dp,
+                                color = Color(0xFF58A6FF)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = pipState.currentActionLabel,
-                                color = Color(0xFF38BDF8),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
+                                color = Color(0xFF58A6FF),
+                                fontSize = 12.sp
                             )
                         } else {
                             Text(
-                                text = pipState.lastResultBanner ?: "pip 执行日志",
-                                color = Color(0xFF4ADE80),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.weight(1f)
+                                text = pipState.lastResultBanner ?: "完成",
+                                color = Color(0xFF8B949E),
+                                fontSize = 12.sp
                             )
                         }
                     }
-
                     if (pipState.pipLogs.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(6.dp))
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(120.dp)
-                                .background(Color(0xFF020617), RoundedCornerShape(6.dp))
-                                .padding(8.dp)
+                                .height(100.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
                             Text(
                                 text = pipState.pipLogs,
-                                color = Color(0xFFCBD5E1),
+                                color = Color(0xFFC9D1D9),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp
                             )
@@ -229,138 +173,93 @@ fun PipManagerScreen(
             }
         }
 
-        // 3. Installed Packages List
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "已安装的包 (${pipState.installedPackages.size})",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
+                text = "已安装 (${pipState.installedPackages.size})",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.weight(1f))
-            Text(
-                text = "支持升级与卸载私有目录包",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            TextButton(onClick = onRefreshList, enabled = !pipState.isBusy) {
+                Text("刷新", fontSize = 12.sp)
+            }
         }
 
-        HorizontalDivider()
+        HorizontalDivider(thickness = 0.5.dp)
 
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        LazyColumn(modifier = Modifier.weight(1f)) {
             items(pipState.installedPackages, key = { it.name }) { pkg ->
-                InstalledPackageCard(
+                MinimalPackageRow(
                     pkg = pkg,
                     isBusy = pipState.isBusy,
-                    onUpgrade = {
-                        showLogConsole = true
-                        onInstallPackage(pkg.name, true)
-                    },
-                    onUninstall = {
-                        showLogConsole = true
-                        onUninstallPackage(pkg.name)
-                    }
+                    onUpgrade = { onInstallPackage(pkg.name, true) },
+                    onUninstall = { onUninstallPackage(pkg.name) }
                 )
+                HorizontalDivider(thickness = 0.5.dp, modifier = Modifier.padding(start = 16.dp))
             }
         }
     }
 }
 
 @Composable
-private fun InstalledPackageCard(
+private fun MinimalPackageRow(
     pkg: InstalledPackage,
     isBusy: Boolean,
     onUpgrade: () -> Unit,
     onUninstall: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = pkg.name,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = pkg.version,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (pkg.isUserInstalled) {
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = pkg.name,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = "v${pkg.version}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Surface(
-                        color = if (pkg.isUserInstalled) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = if (pkg.isUserInstalled) "用户安装 (私有目录)" else "内置预装",
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-                if (pkg.summary.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = pkg.summary,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
+                        text = "用户",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
-
-            OutlinedButton(
-                onClick = onUpgrade,
-                enabled = !isBusy,
-                modifier = Modifier.padding(start = 6.dp)
-            ) {
-                Icon(Icons.Default.SystemUpdateAlt, contentDescription = "升级", modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("升级", fontSize = 12.sp)
+            if (pkg.summary.isNotEmpty()) {
+                Text(
+                    text = pkg.summary,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
             }
+        }
 
-            if (pkg.isUserInstalled) {
-                IconButton(
-                    onClick = onUninstall,
-                    enabled = !isBusy
-                ) {
-                    Icon(
-                        Icons.Default.DeleteOutline,
-                        contentDescription = "卸载",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
+        TextButton(onClick = onUpgrade, enabled = !isBusy) {
+            Text("升级", fontSize = 12.sp)
+        }
+
+        if (pkg.isUserInstalled) {
+            TextButton(onClick = onUninstall, enabled = !isBusy) {
+                Text("卸载", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
             }
         }
     }

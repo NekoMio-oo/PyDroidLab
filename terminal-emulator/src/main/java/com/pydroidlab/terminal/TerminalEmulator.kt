@@ -99,7 +99,7 @@ class TerminalEmulator(
             currentFg = 36 // Cyan banner
             currentBold = true
             currentIsError = false
-            appendRawTextInternal("▶ Running $scriptTitle\n")
+            appendRawTextInternal("> python $scriptTitle\n")
             resetSgr()
             _snapshot.value = TerminalSnapshot(
                 lines = buildVisibleLinesLocked(),

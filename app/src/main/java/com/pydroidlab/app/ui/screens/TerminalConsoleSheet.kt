@@ -1,6 +1,7 @@
 package com.pydroidlab.app.ui.screens
 
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -20,26 +21,23 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.activity.compose.BackHandler
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.RestartAlt
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Fullscreen
+import androidx.compose.material.icons.outlined.FullscreenExit
+import androidx.compose.material.icons.outlined.PlayArrow
+import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,15 +74,6 @@ import com.pydroidlab.terminal.TerminalSnapshot
 
 private val TRACEBACK_LINE_REGEX = Regex("""\bline\s+(\d+)\b""", RegexOption.IGNORE_CASE)
 
-/**
- * Termux-style Interactive Terminal Console:
- * - No clunky external input box or "Evaluate/Send" button.
- * - Tapping anywhere on the terminal screen focuses the inline prompt (`>>> `, `... `, or `input()` prompt)
- *   and brings up the soft keyboard.
- * - Pressing Enter (`↵`) on the soft keyboard immediately executes the command or submits `input()`.
- * - Includes a Termux-style Extra Keys Bar (`ESC`, `TAB`, `CTRL+C`, `CTRL+L`, `↑`, `↓`, `←`, `→`, `HOME`, `END`, `↵`)
- *   with full command history navigation (`↑` / `↓`).
- */
 @Composable
 fun TerminalConsoleSheet(
     snapshot: TerminalSnapshot,
@@ -127,7 +116,6 @@ fun TerminalConsoleSheet(
         onSubmitInput(cleaned)
     }
 
-    // Auto-scroll to the active bottom prompt line whenever output or typing changes
     LaunchedEffect(snapshot.lines.size, snapshot.lines.lastOrNull()?.plainText, tfv.text, isReplMode) {
         val totalItems = snapshot.lines.size + 1
         if (totalItems > 0) {
@@ -135,7 +123,6 @@ fun TerminalConsoleSheet(
         }
     }
 
-    // Automatically focus the inline terminal cursor when `input()` is requested or REPL is opened
     LaunchedEffect(snapshot.isAwaitingInput, isReplMode) {
         if (snapshot.isAwaitingInput || isReplMode) {
             runCatching {
@@ -147,165 +134,111 @@ fun TerminalConsoleSheet(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = Color(0xFF090D16),
-        contentColor = Color(0xFFE2E8F0),
-        tonalElevation = 8.dp
+        color = Color(0xFF0D1117),
+        contentColor = Color(0xFFE6EDF3)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // 1. Compact Terminal Header Bar (34.dp)
+            // 1. Minimal Terminal Header (38.dp)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(34.dp)
-                    .background(Color(0xFF1E293B))
-                    .padding(horizontal = 10.dp),
+                    .height(38.dp)
+                    .background(Color(0xFF161B22))
+                    .padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (isFullScreen) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable { onCloseSheet() }
-                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp)
-                    ) {
+                    IconButton(onClick = onCloseSheet, modifier = Modifier.size(32.dp)) {
                         Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回编辑器",
-                            tint = Color(0xFF38BDF8),
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "返回",
+                            tint = Color(0xFFE6EDF3),
                             modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = "代码",
-                            color = Color(0xFF38BDF8),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
+                    Spacer(modifier = Modifier.width(4.dp))
                 }
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(
-                            color = when {
-                                snapshot.isAwaitingInput -> Color(0xFFFACC15)
-                                snapshot.isRunning -> Color(0xFF22C55E)
-                                isReplMode -> Color(0xFF38BDF8)
-                                else -> Color(0xFF64748B)
-                            },
-                            shape = CircleShape
-                        )
-                )
-                Spacer(modifier = Modifier.width(6.dp))
 
-                // Mode Switcher Pills ([脚本输出] vs [REPL >>>])
-                Row(
+                // Pure text mode tabs: 输出 | 交互
+                Text(
+                    text = "输出",
+                    fontSize = 13.sp,
+                    fontWeight = if (!isReplMode) FontWeight.Bold else FontWeight.Normal,
+                    color = if (!isReplMode) Color(0xFF58A6FF) else Color(0xFF8B949E),
                     modifier = Modifier
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(Color(0xFF0F172A))
-                        .padding(2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (!isReplMode) Color(0xFF0284C7) else Color.Transparent)
-                            .clickable { onToggleReplMode(false) }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = if (snapshot.isAwaitingInput) "等待 input()" else "脚本终端",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (isReplMode) Color(0xFF0284C7) else Color.Transparent)
-                            .clickable { onToggleReplMode(true) }
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = "REPL >>>",
-                            fontSize = 11.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                    }
-                }
+                        .clickable { onToggleReplMode(false) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+                Text(
+                    text = "REPL",
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (isReplMode) FontWeight.Bold else FontWeight.Normal,
+                    color = if (isReplMode) Color(0xFF58A6FF) else Color(0xFF8B949E),
+                    modifier = Modifier
+                        .clickable { onToggleReplMode(true) }
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
 
                 Spacer(modifier = Modifier.weight(1f))
 
                 if (isReplMode && !snapshot.isRunning) {
-                    IconButton(onClick = onResetRepl, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.RestartAlt,
-                            contentDescription = "重置 REPL",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(16.dp)
-                        )
+                    TextButton(onClick = onResetRepl) {
+                        Text("重置", fontSize = 12.sp, color = Color(0xFF8B949E))
                     }
                 }
 
+                TextButton(onClick = onClearTerminal) {
+                    Text("清屏", fontSize = 12.sp, color = Color(0xFF8B949E))
+                }
+
                 if (snapshot.isRunning) {
-                    IconButton(onClick = onStopScript, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onStopScript, modifier = Modifier.size(30.dp)) {
                         Icon(
-                            Icons.Default.Stop,
-                            contentDescription = "中断程序",
-                            tint = Color(0xFFEF4444),
-                            modifier = Modifier.size(16.dp)
+                            Icons.Outlined.Stop,
+                            contentDescription = "停止",
+                            tint = Color(0xFFF85149),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 } else {
-                    IconButton(onClick = onRerunScript, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onRerunScript, modifier = Modifier.size(30.dp)) {
                         Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = "重新运行脚本",
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(16.dp)
+                            Icons.Outlined.PlayArrow,
+                            contentDescription = "运行",
+                            tint = Color(0xFF58A6FF),
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
 
                 IconButton(
                     onClick = { onToggleFullScreen(!isFullScreen) },
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
-                        imageVector = if (isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                        contentDescription = if (isFullScreen) "切换为底部分屏" else "切换为全屏终端",
-                        tint = Color(0xFF38BDF8),
+                        imageVector = if (isFullScreen) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen,
+                        contentDescription = "全屏切换",
+                        tint = Color(0xFF8B949E),
                         modifier = Modifier.size(18.dp)
                     )
                 }
 
-                IconButton(onClick = onClearTerminal, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        Icons.Default.DeleteSweep,
-                        contentDescription = "清屏",
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-
-                IconButton(onClick = onCloseSheet, modifier = Modifier.size(28.dp)) {
-                    Icon(
-                        Icons.Default.Close,
-                        contentDescription = "收起终端",
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(16.dp)
-                    )
+                if (!isFullScreen) {
+                    IconButton(onClick = onCloseSheet, modifier = Modifier.size(30.dp)) {
+                        Icon(
+                            Icons.Outlined.Close,
+                            contentDescription = "关闭",
+                            tint = Color(0xFF8B949E),
+                            modifier = Modifier.size(17.dp)
+                        )
+                    }
                 }
             }
 
-            HorizontalDivider(color = Color(0xFF334155))
+            HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF30363D))
 
-            // 2. Termux-style Direct Inline Terminal Canvas
-            // Tapping anywhere in the terminal focuses the inline cursor and brings up the keyboard!
+            // 2. Direct Inline Terminal Canvas
             val lastLineIncomplete = snapshot.lines.lastOrNull()?.isComplete == false
 
             Box(
@@ -317,7 +250,6 @@ fun TerminalConsoleSheet(
                         indication = null
                     ) {
                         if (!snapshot.isRunning && !isReplMode) {
-                            // Tapping an idle script terminal automatically activates interactive REPL >>> like Termux!
                             onToggleReplMode(true)
                         }
                         runCatching {
@@ -325,7 +257,7 @@ fun TerminalConsoleSheet(
                             keyboardController?.show()
                         }
                     }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 LazyColumn(
                     state = listState,
@@ -345,7 +277,6 @@ fun TerminalConsoleSheet(
                         )
                     }
 
-                    // Active inline input row (merges trailing incomplete prompt like `input("Name: ")` or shows `>>> `)
                     item(key = "active_inline_prompt") {
                         val inlinePromptPrefix = when {
                             lastLineIncomplete && isInteractiveLineVisible -> {
@@ -354,7 +285,6 @@ fun TerminalConsoleSheet(
                             isReplMode && !snapshot.isRunning -> {
                                 if (replContinuation) "... " else ">>> "
                             }
-                            snapshot.isAwaitingInput -> ""
                             else -> ""
                         }
 
@@ -366,7 +296,6 @@ fun TerminalConsoleSheet(
                                 fontSizeSp = fontSizeSp,
                                 focusRequester = inputFocusRequester,
                                 onValueChange = { newValue ->
-                                    // If the soft keyboard inserted a newline ('\n'), immediately execute line(s) like Termux!
                                     if (newValue.text.contains('\n')) {
                                         val parts = newValue.text.split('\n')
                                         for (i in 0 until parts.size - 1) {
@@ -386,8 +315,8 @@ fun TerminalConsoleSheet(
                             )
                         } else {
                             Text(
-                                text = "轻触终端屏幕直接进入 >>> 交互命令模式",
-                                color = Color(0xFF64748B),
+                                text = "点击屏幕进入 REPL 交互模式",
+                                color = Color(0xFF484F58),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = (fontSizeSp - 1f).sp,
                                 modifier = Modifier.padding(top = 4.dp)
@@ -397,11 +326,11 @@ fun TerminalConsoleSheet(
                 }
             }
 
-            // 3. Termux-style Extra Keys Bar (ESC, TAB, CTRL+C, CTRL+L, ↑, ↓, ←, →, HOME, END, ↵)
+            HorizontalDivider(thickness = 0.5.dp, color = Color(0xFF30363D))
+
+            // 3. Minimal Termux Extra Keys Row
             TermuxExtraKeysBar(
-                onEsc = {
-                    tfv = TextFieldValue("")
-                },
+                onEsc = { tfv = TextFieldValue("") },
                 onTab = {
                     val cur = tfv.text
                     val sel = tfv.selection.start.coerceIn(0, cur.length)
@@ -413,9 +342,7 @@ fun TerminalConsoleSheet(
                         onStopScript()
                     } else {
                         tfv = TextFieldValue("")
-                        if (isReplMode) {
-                            onResetRepl()
-                        }
+                        if (isReplMode) onResetRepl()
                     }
                 },
                 onCtrlL = onClearTerminal,
@@ -448,18 +375,8 @@ fun TerminalConsoleSheet(
                     val pos = (tfv.selection.start + 1).coerceAtMost(tfv.text.length)
                     tfv = tfv.copy(selection = TextRange(pos))
                 },
-                onHome = {
-                    tfv = tfv.copy(selection = TextRange(0))
-                },
-                onEnd = {
-                    tfv = tfv.copy(selection = TextRange(tfv.text.length))
-                },
-                onInsertSymbol = { sym ->
-                    val cur = tfv.text
-                    val sel = tfv.selection.start.coerceIn(0, cur.length)
-                    val updated = cur.substring(0, sel) + sym + cur.substring(sel)
-                    tfv = TextFieldValue(updated, TextRange(sel + sym.length))
-                },
+                onHome = { tfv = tfv.copy(selection = TextRange(0)) },
+                onEnd = { tfv = tfv.copy(selection = TextRange(tfv.text.length)) },
                 onEnter = {
                     if (!snapshot.isRunning && !isReplMode) {
                         onToggleReplMode(true)
@@ -491,9 +408,9 @@ private fun InlineTermuxPromptRow(
         if (promptPrefix.isNotEmpty()) {
             Text(
                 text = promptPrefix,
-                color = if (isReplPrompt) Color(0xFF38BDF8) else Color(0xFFE2E8F0),
+                color = if (isReplPrompt) Color(0xFF58A6FF) else Color(0xFFE6EDF3),
                 fontFamily = FontFamily.Monospace,
-                fontWeight = if (isReplPrompt) FontWeight.Bold else FontWeight.Normal,
+                fontWeight = if (isReplPrompt) FontWeight.SemiBold else FontWeight.Normal,
                 fontSize = fontSizeSp.sp,
                 lineHeight = (fontSizeSp * 1.35f).sp
             )
@@ -503,13 +420,12 @@ private fun InlineTermuxPromptRow(
             value = tfv,
             onValueChange = onValueChange,
             textStyle = TextStyle(
-                color = Color(0xFF4ADE80),
+                color = Color(0xFFE6EDF3),
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.SemiBold,
                 fontSize = fontSizeSp.sp,
                 lineHeight = (fontSizeSp * 1.35f).sp
             ),
-            cursorBrush = SolidColor(Color(0xFF4ADE80)),
+            cursorBrush = SolidColor(Color(0xFF58A6FF)),
             keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.None,
                 autoCorrect = false,
@@ -551,7 +467,6 @@ private fun TermuxExtraKeysBar(
     onCursorRight: () -> Unit,
     onHome: () -> Unit,
     onEnd: () -> Unit,
-    onInsertSymbol: (String) -> Unit,
     onEnter: () -> Unit
 ) {
     val keys = listOf<Pair<String, () -> Unit>>(
@@ -565,53 +480,32 @@ private fun TermuxExtraKeysBar(
         "→" to onCursorRight,
         "HOME" to onHome,
         "END" to onEnd,
-        "(" to { onInsertSymbol("(") },
-        ")" to { onInsertSymbol(")") },
-        ":" to { onInsertSymbol(":") },
-        "\"" to { onInsertSymbol("\"") },
-        "=" to { onInsertSymbol("=") },
-        "↵" to onEnter
+        "ENTER" to onEnter
     )
 
-    Surface(
-        color = Color(0xFF151F32),
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(34.dp)
+            .background(Color(0xFF161B22))
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            keys.forEach { (label, action) ->
-                val isAccent = label == "CTRL+C" || label == "↵"
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .height(26.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(
-                            when (label) {
-                                "CTRL+C" -> Color(0xFF7F1D1D)
-                                "↵" -> Color(0xFF0284C7)
-                                else -> Color(0xFF26354D)
-                            }
-                        )
-                        .clickable { action() }
-                        .padding(horizontal = 9.dp)
-                ) {
-                    Text(
-                        text = label,
-                        color = if (isAccent) Color.White else Color(0xFFE2E8F0),
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
-                    )
-                }
+        keys.forEach { (label, action) ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .height(30.dp)
+                    .clickable { action() }
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = if (label == "CTRL+C") Color(0xFFF85149) else Color(0xFFC9D1D9),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp
+                )
             }
         }
     }
@@ -637,7 +531,7 @@ private fun TerminalLineRow(
             withStyle(
                 style = SpanStyle(
                     color = ansiIndexToColor(seg.fgColorIndex, seg.isError),
-                    fontWeight = if (seg.isBold) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (seg.isBold) FontWeight.SemiBold else FontWeight.Normal,
                     fontFamily = FontFamily.Monospace,
                     fontSize = fontSizeSp.sp
                 )
@@ -660,39 +554,32 @@ private fun TerminalLineRow(
         )
 
         if (lineNumMatch != null) {
-            Box(
+            Text(
+                text = "行 $lineNumMatch",
+                color = Color(0xFFF85149),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
                 modifier = Modifier
-                    .padding(start = 6.dp)
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color(0xFF7F1D1D))
+                    .padding(start = 8.dp)
                     .clickable { onJumpToLine(lineNumMatch) }
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = "跳转 Ln $lineNumMatch ↗",
-                    color = Color(0xFFFECACA),
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+            )
         }
     }
 }
 
 private fun ansiIndexToColor(index: Int, isError: Boolean): Color {
     if (isError && index == TerminalSegment.DEFAULT_FG) {
-        return Color(0xFFF87171)
+        return Color(0xFFF85149)
     }
     return when (index) {
-        30, 90 -> Color(0xFF94A3B8)
-        31, 91 -> Color(0xFFF87171) // Red
-        32, 92 -> Color(0xFF4ADE80) // Green
-        33, 93 -> Color(0xFFFACC15) // Yellow
-        34, 94 -> Color(0xFF60A5FA) // Blue
-        35, 95 -> Color(0xFFC084FC) // Magenta
-        36, 96 -> Color(0xFF38BDF8) // Cyan
-        37, 97 -> Color(0xFFF8FAFC) // White
-        else -> Color(0xFFE2E8F0)
+        30, 90 -> Color(0xFF8B949E)
+        31, 91 -> Color(0xFFF85149)
+        32, 92 -> Color(0xFF3FB950)
+        33, 93 -> Color(0xFFD29922)
+        34, 94 -> Color(0xFF58A6FF)
+        35, 95 -> Color(0xFFBC8CFF)
+        36, 96 -> Color(0xFF39C5CF)
+        37, 97 -> Color(0xFFE6EDF3)
+        else -> Color(0xFFE6EDF3)
     }
 }

@@ -11,7 +11,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,18 +25,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Terminal
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Extension
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -47,12 +43,12 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -116,7 +112,6 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
     val showFullScreenTerminal = isTerminalExpanded && settings.terminalFullScreen
     val isImmersiveEditor = selectedTab == NavTab.EDITOR && !showFullScreenTerminal
 
-    // Pressing Back when on a non-editor tab returns to the immersive code editor
     BackHandler(enabled = selectedTab != NavTab.EDITOR) {
         viewModel.selectTab(NavTab.EDITOR)
     }
@@ -134,81 +129,74 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
         gesturesEnabled = isImmersiveEditor,
         drawerContent = {
             ModalDrawerSheet(
+                drawerShape = RectangleShape,
                 modifier = Modifier
-                    .width(300.dp)
+                    .width(270.dp)
                     .fillMaxHeight()
             ) {
-                // 1. TinaIDE-style Drawer Header
-                Column(
+                // 1. Minimalist TinaIDE Drawer Header
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
-                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "PyDroidLab IDE",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        text = "PyDroidLab",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "Python 3.10 • 工作区文件树与导航",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "Python 3.10",
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                HorizontalDivider(thickness = 0.5.dp)
 
-                // 2. Quick Navigation Entries (项目页 / 市场 / 教程 / 设置 / 终端)
-                val navItems = listOf(
-                    Triple(NavTab.FILES, "项目工作区 (Files)", Icons.Default.Folder),
-                    Triple(NavTab.PIP, "pip 扩展包市场 (Market)", Icons.Default.Extension),
-                    Triple(NavTab.SAMPLES, "Python 实战教程 (Tutorials)", Icons.Default.MenuBook),
-                    Triple(NavTab.SETTINGS, "IDE 环境设置 (Settings)", Icons.Default.Settings)
+                // 2. Clean Pure-Text Navigation Entries
+                val drawerEntries = listOf(
+                    NavTab.FILES to "项目文件",
+                    NavTab.PIP to "扩展包管理",
+                    NavTab.SAMPLES to "示例教程",
+                    NavTab.SETTINGS to "环境设置"
                 )
-                navItems.forEach { (tab, title, icon) ->
-                    NavigationDrawerItem(
-                        label = { Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-                        selected = selectedTab == tab,
-                        icon = { Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp)) },
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            viewModel.selectTab(tab)
-                        },
+                drawerEntries.forEach { (tab, label) ->
+                    Row(
                         modifier = Modifier
-                            .padding(horizontal = 10.dp)
-                            .height(42.dp)
-                    )
+                            .fillMaxWidth()
+                            .clickable {
+                                scope.launch { drawerState.close() }
+                                viewModel.selectTab(tab)
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = label,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
 
-                NavigationDrawerItem(
-                    label = { Text("全屏交互终端 (Termux Console)", fontSize = 13.sp, fontWeight = FontWeight.Medium) },
-                    selected = showFullScreenTerminal,
-                    icon = { Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(19.dp)) },
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        viewModel.setTerminalExpanded(true)
-                    },
-                    modifier = Modifier
-                        .padding(horizontal = 10.dp)
-                        .height(42.dp)
-                )
+                HorizontalDivider(thickness = 0.5.dp)
 
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                // 3. Embedded Live Project File Tree inside Drawer (TinaIDE style)
+                // 3. Minimalist Workspace File Tree
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 2.dp),
+                        .padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = fileBrowserState.relativePath,
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -216,19 +204,19 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                     if (fileBrowserState.currentDir.canonicalPath != viewModel.fileRepository.workspaceRoot.canonicalPath) {
                         IconButton(
                             onClick = { viewModel.navigateUpDirectory() },
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = "上级目录", modifier = Modifier.size(15.dp))
+                            Icon(Icons.Outlined.ArrowUpward, contentDescription = "上级", modifier = Modifier.size(15.dp))
                         }
                     }
                     IconButton(
                         onClick = {
                             scope.launch { drawerState.close() }
-                            viewModel.createNewScriptInEditor("script_${System.currentTimeMillis() % 1000}.py")
+                            viewModel.createNewScriptInEditor("untitled_${System.currentTimeMillis() % 1000}.py")
                         },
-                        modifier = Modifier.size(26.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "快速新建脚本", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Outlined.Add, contentDescription = "新建", modifier = Modifier.size(16.dp))
                     }
                 }
 
@@ -236,16 +224,14 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
                 ) {
                     items(fileBrowserState.items, key = { it.path }) { item ->
                         val isCurrentFile = editorState.activeFile?.canonicalPath == item.file.canonicalPath
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(6.dp))
                                 .background(
-                                    if (isCurrentFile) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    if (isCurrentFile) MaterialTheme.colorScheme.surfaceVariant
                                     else androidx.compose.ui.graphics.Color.Transparent
                                 )
                                 .clickable {
@@ -256,21 +242,22 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                                         viewModel.openFileInEditor(item.file)
                                     }
                                 }
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = if (item.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
+                                imageVector = if (item.isDirectory) Icons.Outlined.Folder else Icons.AutoMirrored.Outlined.InsertDriveFile,
                                 contentDescription = null,
-                                tint = if (item.isDirectory) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp)
+                                tint = if (item.isDirectory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = item.name,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                fontWeight = if (isCurrentFile) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 13.sp,
+                                fontWeight = if (isCurrentFile) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isCurrentFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -286,79 +273,73 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                 .imePadding(),
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
-                // When on TinaIDE Home tabs (项目 / 市场 / 教程 / 设置), show a sleek top bar with "返回编辑器" button
                 if (!showFullScreenTerminal && selectedTab != NavTab.EDITOR) {
-                    Surface(
-                        tonalElevation = 2.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(48.dp)
-                    ) {
-                        Row(
+                    Column {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
                             modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .fillMaxWidth()
+                                .height(46.dp)
                         ) {
-                            Text(
-                                text = when (selectedTab) {
-                                    NavTab.FILES -> "项目工作区"
-                                    NavTab.PIP -> "pip 扩展包市场"
-                                    NavTab.SAMPLES -> "Python 实战教程"
-                                    NavTab.SETTINGS -> "IDE 环境设置"
-                                    NavTab.EDITOR -> "编辑器"
-                                },
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Button(
-                                onClick = { viewModel.selectTab(NavTab.EDITOR) },
-                                shape = RoundedCornerShape(8.dp)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("返回代码编辑器 (${editorState.fileName})", fontSize = 12.sp)
+                                Text(
+                                    text = when (selectedTab) {
+                                        NavTab.FILES -> "项目"
+                                        NavTab.PIP -> "市场"
+                                        NavTab.SAMPLES -> "教程"
+                                        NavTab.SETTINGS -> "设置"
+                                        NavTab.EDITOR -> "编辑器"
+                                    },
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { viewModel.selectTab(NavTab.EDITOR) }) {
+                                    Text("返回编辑器", fontSize = 13.sp)
+                                }
                             }
                         }
+                        HorizontalDivider(thickness = 0.5.dp)
                     }
                 }
             },
             bottomBar = {
-                // TinaIDE Architecture:
-                // - In Code Editor or Full-Screen Terminal: NO bottom navigation bar! 100% immersive!
-                // - In Home tabs (项目 / 市场 / 教程 / 设置): 4-tab TinaIDE bottom bar + 编辑器 entry
                 if (!showFullScreenTerminal && selectedTab != NavTab.EDITOR) {
-                    NavigationBar {
-                        NavigationBarItem(
-                            selected = false,
-                            onClick = { viewModel.selectTab(NavTab.EDITOR) },
-                            icon = { Icon(Icons.Default.Code, contentDescription = null) },
-                            label = { Text("编辑器") }
-                        )
+                    NavigationBar(tonalElevation = 0.dp) {
                         NavigationBarItem(
                             selected = selectedTab == NavTab.FILES,
                             onClick = { viewModel.selectTab(NavTab.FILES) },
-                            icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-                            label = { Text("项目") }
+                            icon = { Icon(Icons.Outlined.Folder, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            label = { Text("项目", fontSize = 11.sp) }
                         )
                         NavigationBarItem(
                             selected = selectedTab == NavTab.PIP,
                             onClick = { viewModel.selectTab(NavTab.PIP) },
-                            icon = { Icon(Icons.Default.Extension, contentDescription = null) },
-                            label = { Text("市场") }
+                            icon = { Icon(Icons.Outlined.Extension, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            label = { Text("市场", fontSize = 11.sp) }
                         )
                         NavigationBarItem(
                             selected = selectedTab == NavTab.SAMPLES,
                             onClick = { viewModel.selectTab(NavTab.SAMPLES) },
-                            icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
-                            label = { Text("教程") }
+                            icon = { Icon(Icons.Outlined.MenuBook, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            label = { Text("教程", fontSize = 11.sp) }
                         )
                         NavigationBarItem(
                             selected = selectedTab == NavTab.SETTINGS,
                             onClick = { viewModel.selectTab(NavTab.SETTINGS) },
-                            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                            label = { Text("设置") }
+                            icon = { Icon(Icons.Outlined.Settings, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            label = { Text("设置", fontSize = 11.sp) }
+                        )
+                        NavigationBarItem(
+                            selected = false,
+                            onClick = { viewModel.selectTab(NavTab.EDITOR) },
+                            icon = { Icon(Icons.Outlined.Code, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                            label = { Text("编辑器", fontSize = 11.sp) }
                         )
                     }
                 }
@@ -478,7 +459,6 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                         }
                     }
 
-                    // Bottom Split-Screen Terminal Dock (Only when terminalFullScreen == false)
                     AnimatedVisibility(
                         visible = isTerminalExpanded && !settings.terminalFullScreen && selectedTab == NavTab.EDITOR,
                         enter = expandVertically(),
@@ -499,7 +479,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                             onRerunScript = { viewModel.runCurrentScript() },
                             onClearTerminal = viewModel::clearTerminal,
                             onCloseSheet = { viewModel.setTerminalExpanded(false) },
-                            modifier = Modifier.height(275.dp)
+                            modifier = Modifier.height(260.dp)
                         )
                     }
                 }
@@ -507,7 +487,6 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
         }
     }
 
-    // Built-in Zoomable Image / Plot / JSON / Markdown Previewer Dialog
     previewFile?.let { file ->
         FilePreviewDialog(
             file = file,

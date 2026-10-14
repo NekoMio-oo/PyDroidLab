@@ -3,10 +3,6 @@ package com.pydroidlab.app.editor
 import androidx.compose.ui.graphics.Color
 import io.github.rosemoe.sora.widget.schemes.EditorColorScheme
 
-/**
- * 6 curated flagship IDE color themes inspired by Acode, VS Code, and JetBrains Fleet.
- * Styles both the Sora CodeEditor canvas AND the surrounding Compose IDE chrome!
- */
 enum class IdeColorTheme(
     val id: String,
     val displayName: String,
@@ -21,23 +17,23 @@ enum class IdeColorTheme(
 ) {
     ONE_DARK_PRO(
         id = "one_dark_pro",
-        displayName = "One Dark Pro (默认深色)",
+        displayName = "One Dark",
         isDark = true,
-        chromeBg = Color(0xFF21252B),
-        editorBg = Color(0xFF282C34),
-        tabStripBg = Color(0xFF181A1F),
-        statusBarBg = Color(0xFF21252B),
-        accentColor = Color(0xFF61AFEF),
-        textPrimary = Color(0xFFABB2BF),
-        textSecondary = Color(0xFF7F848E)
+        chromeBg = Color(0xFF161B22),
+        editorBg = Color(0xFF0D1117),
+        tabStripBg = Color(0xFF0D1117),
+        statusBarBg = Color(0xFF161B22),
+        accentColor = Color(0xFF58A6FF),
+        textPrimary = Color(0xFFE6EDF3),
+        textSecondary = Color(0xFF8B949E)
     ),
     TOKYO_NIGHT(
         id = "tokyo_night",
-        displayName = "Tokyo Night (极客霓虹)",
+        displayName = "Tokyo Night",
         isDark = true,
         chromeBg = Color(0xFF16161E),
         editorBg = Color(0xFF1A1B26),
-        tabStripBg = Color(0xFF13131A),
+        tabStripBg = Color(0xFF16161E),
         statusBarBg = Color(0xFF16161E),
         accentColor = Color(0xFF7AA2F7),
         textPrimary = Color(0xFFC0CAF5),
@@ -45,11 +41,11 @@ enum class IdeColorTheme(
     ),
     DRACULA(
         id = "dracula",
-        displayName = "Dracula (暗黑紫青)",
+        displayName = "Dracula",
         isDark = true,
         chromeBg = Color(0xFF1E1F29),
         editorBg = Color(0xFF282A36),
-        tabStripBg = Color(0xFF191A21),
+        tabStripBg = Color(0xFF1E1F29),
         statusBarBg = Color(0xFF1E1F29),
         accentColor = Color(0xFFBD93F9),
         textPrimary = Color(0xFFF8F8F2),
@@ -57,11 +53,11 @@ enum class IdeColorTheme(
     ),
     MONOKAI_PRO(
         id = "monokai_pro",
-        displayName = "Monokai Pro (经典暖黑)",
+        displayName = "Monokai",
         isDark = true,
         chromeBg = Color(0xFF221F22),
         editorBg = Color(0xFF2D2A2E),
-        tabStripBg = Color(0xFF19181A),
+        tabStripBg = Color(0xFF221F22),
         statusBarBg = Color(0xFF221F22),
         accentColor = Color(0xFFFFD866),
         textPrimary = Color(0xFFFCFCFA),
@@ -69,11 +65,11 @@ enum class IdeColorTheme(
     ),
     CATPPUCCIN_MOCHA(
         id = "catppuccin_mocha",
-        displayName = "Catppuccin Mocha (柔和摩卡)",
+        displayName = "Catppuccin",
         isDark = true,
         chromeBg = Color(0xFF181825),
         editorBg = Color(0xFF1E1E2E),
-        tabStripBg = Color(0xFF11111B),
+        tabStripBg = Color(0xFF181825),
         statusBarBg = Color(0xFF181825),
         accentColor = Color(0xFFCBA6F7),
         textPrimary = Color(0xFFCDD6F4),
@@ -81,11 +77,11 @@ enum class IdeColorTheme(
     ),
     GITHUB_LIGHT(
         id = "github_light",
-        displayName = "GitHub Light (清爽浅色)",
+        displayName = "GitHub Light",
         isDark = false,
         chromeBg = Color(0xFFF6F8FA),
         editorBg = Color(0xFFFFFFFF),
-        tabStripBg = Color(0xFFEAEEF2),
+        tabStripBg = Color(0xFFF6F8FA),
         statusBarBg = Color(0xFFF6F8FA),
         accentColor = Color(0xFF0969DA),
         textPrimary = Color(0xFF1F2328),
@@ -104,24 +100,24 @@ object EditorThemeManager {
     fun createSoraScheme(theme: IdeColorTheme): EditorColorScheme {
         return when (theme) {
             IdeColorTheme.ONE_DARK_PRO -> buildCustomScheme(
-                wholeBg = 0xFF282C34.toInt(),
-                lineNumBg = 0xFF21252B.toInt(),
-                lineNum = 0xFF5C6370.toInt(),
-                curLine = 0xFF2C313C.toInt(),
-                selBg = 0xFF3E4451.toInt(),
-                cursor = 0xFF528BFF.toInt(),
-                textNormal = 0xFFABB2BF.toInt(),
-                keyword = 0xFFC678DD.toInt(),
-                functionName = 0xFF61AFEF.toInt(),
-                literal = 0xFF98C379.toInt(),
-                comment = 0xFF5C6370.toInt(),
-                operator = 0xFFD19A66.toInt(),
-                annotation = 0xFFE5C07B.toInt(),
-                blockLine = 0xFF3B4048.toInt()
+                wholeBg = 0xFF0D1117.toInt(),
+                lineNumBg = 0xFF0D1117.toInt(),
+                lineNum = 0xFF484F58.toInt(),
+                curLine = 0xFF161B22.toInt(),
+                selBg = 0xFF1F3A5F.toInt(),
+                cursor = 0xFF58A6FF.toInt(),
+                textNormal = 0xFFE6EDF3.toInt(),
+                keyword = 0xFFFF7B72.toInt(),
+                functionName = 0xFFD2A8FF.toInt(),
+                literal = 0xFFA5D6FF.toInt(),
+                comment = 0xFF8B949E.toInt(),
+                operator = 0xFF79C0FF.toInt(),
+                annotation = 0xFFFFA657.toInt(),
+                blockLine = 0xFF21262D.toInt()
             )
             IdeColorTheme.TOKYO_NIGHT -> buildCustomScheme(
                 wholeBg = 0xFF1A1B26.toInt(),
-                lineNumBg = 0xFF16161E.toInt(),
+                lineNumBg = 0xFF1A1B26.toInt(),
                 lineNum = 0xFF3B4261.toInt(),
                 curLine = 0xFF24283B.toInt(),
                 selBg = 0xFF33467C.toInt(),
@@ -137,7 +133,7 @@ object EditorThemeManager {
             )
             IdeColorTheme.DRACULA -> buildCustomScheme(
                 wholeBg = 0xFF282A36.toInt(),
-                lineNumBg = 0xFF1E1F29.toInt(),
+                lineNumBg = 0xFF282A36.toInt(),
                 lineNum = 0xFF6272A4.toInt(),
                 curLine = 0xFF343746.toInt(),
                 selBg = 0xFF44475A.toInt(),
@@ -153,7 +149,7 @@ object EditorThemeManager {
             )
             IdeColorTheme.MONOKAI_PRO -> buildCustomScheme(
                 wholeBg = 0xFF2D2A2E.toInt(),
-                lineNumBg = 0xFF221F22.toInt(),
+                lineNumBg = 0xFF2D2A2E.toInt(),
                 lineNum = 0xFF5B595C.toInt(),
                 curLine = 0xFF383539.toInt(),
                 selBg = 0xFF544F55.toInt(),
@@ -169,7 +165,7 @@ object EditorThemeManager {
             )
             IdeColorTheme.CATPPUCCIN_MOCHA -> buildCustomScheme(
                 wholeBg = 0xFF1E1E2E.toInt(),
-                lineNumBg = 0xFF181825.toInt(),
+                lineNumBg = 0xFF1E1E2E.toInt(),
                 lineNum = 0xFF585B70.toInt(),
                 curLine = 0xFF313244.toInt(),
                 selBg = 0xFF45475A.toInt(),
@@ -185,10 +181,10 @@ object EditorThemeManager {
             )
             IdeColorTheme.GITHUB_LIGHT -> buildCustomScheme(
                 wholeBg = 0xFFFFFFFF.toInt(),
-                lineNumBg = 0xFFF6F8FA.toInt(),
+                lineNumBg = 0xFFFFFFFF.toInt(),
                 lineNum = 0xFF8C959F.toInt(),
-                curLine = 0xFFF0F6FC.toInt(),
-                selBg = 0xFFB6E3FF.toInt(),
+                curLine = 0xFFF6F8FA.toInt(),
+                selBg = 0xFFDDF4FF.toInt(),
                 cursor = 0xFF0969DA.toInt(),
                 textNormal = 0xFF1F2328.toInt(),
                 keyword = 0xFFCF222E.toInt(),
