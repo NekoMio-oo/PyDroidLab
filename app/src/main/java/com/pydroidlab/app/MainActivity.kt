@@ -148,7 +148,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "Python 3.10",
+                        text = "Python ${editorState.runtimeContextInfo.pythonVersion}",
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

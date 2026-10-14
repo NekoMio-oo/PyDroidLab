@@ -12,7 +12,7 @@ PyDroidLab 是一款对标 Pydroid 3 的移动端 Python 3 集成开发环境（
 | **Android SDK** | `compileSdk = 34`、`targetSdk = 34`、`minSdk = 26` (Android 8.0 ~ Android 14+) |
 | **开发语言与 UI** | Kotlin `1.9.24` + Jetpack Compose BOM `2024.06.00` (Material 3) |
 | **代码编辑器组件** | `io.github.Rosemoe.sora-editor:editor:0.23.4` + `language-textmate:0.23.4` |
-| **Python 解释器引擎** | Chaquopy `17.1.0`（MIT 开源协议，内置 CPython `3.10` 运行时与 `pip`） |
+| **Python 解释器引擎** | Chaquopy `17.1.0`（MIT 开源协议，内置 CPython `3.13` 运行时与 `pip`） |
 | **交互式终端控制台** | `:terminal-emulator` 模块（支持 VT100/ANSI 转义序列解析、阻塞式 `stdin` 行缓冲队列） |
 
 ## 2. 项目目录结构
@@ -77,7 +77,7 @@ PyDroidLab/
 ## 5. 三大关键设计决策（架构深潜）
 
 ### 5.1 解释器如何打包与启动
-* **原生库与标准库打包**：构建期间，Chaquopy Gradle 插件会将针对 `arm64-v8a` 和 `x86_64` 交叉编译的 `libpython3.10.so`、`libchaquopy_java.so`、OpenSSL/SQLite/libffi 等原生动态库打包至 APK 的 `lib/<abi>/` 目录；Python 标准库与构建期 `pip` 包被打包至 `assets/chaquopy/`。
+* **原生库与标准库打包**：构建期间，Chaquopy Gradle 插件会将针对 `arm64-v8a` 和 `x86_64` 交叉编译的 `libpython3.13.so`、`libchaquopy_java.so`、OpenSSL/SQLite/libffi 等原生动态库打包至 APK 的 `lib/<abi>/` 目录；Python 标准库与构建期 `pip` 包被打包至 `assets/chaquopy/`。
 * **进程内 JNI 桥接**：应用启动时，`PyDroidLabApp.onCreate()` 调用 `Python.start(AndroidPlatform(this))` 在当前 Android 进程内初始化 CPython 解释器（耗时约 80ms~150ms）。相较于 Fork 独立子进程的方案，进程内 JNI 桥接避免了 Android 10+ W^X（`SELinux execmem/execmod`）对外部可执行二进制文件的限制，在 Android 14 (targetSdk 34) 上 100% 合规稳定。
 * **字节码编译设置**：在 `chaquopy.defaultConfig.pyc` 中设置 `src = false`，保留原始 `.py` 源码回溯信息，以便用户在触发异常时能看到清晰的堆栈行号。
 

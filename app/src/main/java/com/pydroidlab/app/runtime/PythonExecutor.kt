@@ -62,7 +62,7 @@ data class AstAnalysisResult(
 )
 
 data class RuntimeContextInfo(
-    val pythonVersion: String = "3.10",
+    val pythonVersion: String = "3.13",
     val fullVersion: String = "",
     val platform: String = "",
     val cwd: String = "",
@@ -260,7 +260,7 @@ class PythonExecutor(
                 paths.add(pathArr.optString(i))
             }
             RuntimeContextInfo(
-                pythonVersion = obj.optString("python_version", "3.10"),
+                pythonVersion = obj.optString("python_version", "3.13"),
                 fullVersion = obj.optString("full_version", ""),
                 platform = obj.optString("platform", ""),
                 cwd = obj.optString("cwd", ""),
