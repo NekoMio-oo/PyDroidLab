@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -126,7 +127,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
 
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = isImmersiveEditor,
+        gesturesEnabled = drawerState.isOpen,
         drawerContent = {
             ModalDrawerSheet(
                 drawerShape = RectangleShape,
@@ -134,10 +135,11 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                     .width(270.dp)
                     .fillMaxHeight()
             ) {
-                // 1. Minimalist TinaIDE Drawer Header
+                // 1. Minimalist TinaIDE Drawer Header (with statusBarsPadding so it sits below status bar)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .statusBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -274,12 +276,17 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
             snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 if (!showFullScreenTerminal && selectedTab != NavTab.EDITOR) {
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surface)
+                            .statusBarsPadding()
+                    ) {
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(46.dp)
+                                .height(48.dp)
                         ) {
                             Row(
                                 modifier = Modifier
@@ -403,6 +410,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                                         viewModel.setTerminalExpanded(!isTerminalExpanded)
                                     },
                                     onSelectIdeTheme = viewModel::setIdeColorTheme,
+                                    onToggleWordWrap = { viewModel.setWordWrap(!settings.wordWrap) },
                                     onRefreshRuntimeDiagnostics = viewModel::refreshRuntimeDiagnostics,
                                     onConsumeJumpToLine = viewModel::consumeJumpToLine
                                 )

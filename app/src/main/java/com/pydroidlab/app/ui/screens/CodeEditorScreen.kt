@@ -112,6 +112,7 @@ fun CodeEditorScreen(
     onUpdateFindReplace: (String, String, Boolean, Boolean) -> Unit,
     onToggleTerminal: () -> Unit,
     onSelectIdeTheme: (IdeColorTheme) -> Unit,
+    onToggleWordWrap: () -> Unit,
     onRefreshRuntimeDiagnostics: (Boolean) -> Unit,
     onConsumeJumpToLine: () -> Unit
 ) {
@@ -123,6 +124,7 @@ fun CodeEditorScreen(
     var editorRef by remember { mutableStateOf<CodeEditor?>(null) }
     var lastLoadedVersion by remember { mutableLongStateOf(-1L) }
     var lastAppliedThemeId by remember { mutableStateOf("") }
+    var lastAppliedFontSizeSp by remember { mutableStateOf(-1f) }
 
     var showNewFileDialog by remember { mutableStateOf(false) }
     var showSaveAsDialog by remember { mutableStateOf(false) }
@@ -355,6 +357,13 @@ fun CodeEditorScreen(
                             }
                         )
                         DropdownMenuItem(
+                            text = { Text(if (settings.wordWrap) "关闭自动折行" else "开启自动折行", fontSize = 14.sp) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onToggleWordWrap()
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("格式化代码", fontSize = 14.sp) },
                             onClick = {
                                 showOverflowMenu = false
@@ -498,6 +507,14 @@ fun CodeEditorScreen(
                         isHighlightCurrentBlock = true
                         isHighlightCurrentLine = true
                         isBlockLineEnabled = true
+                        isScalable = true
+                        setScaleTextSizes(8f, 36f)
+                        isHorizontalScrollBarEnabled = true
+                        isVerticalScrollBarEnabled = true
+                        setOnTouchListener { v, _ ->
+                            v.parent?.requestDisallowInterceptTouchEvent(true)
+                            false
+                        }
 
                         val pyLang = PythonSoraLanguage(tabWidthProvider = { settings.tabWidth })
                         setEditorLanguage(pyLang)
@@ -505,6 +522,7 @@ fun CodeEditorScreen(
                         lastAppliedThemeId = ideTheme.id
 
                         setTextSize(settings.editorFontSizeSp)
+                        lastAppliedFontSizeSp = settings.editorFontSizeSp
                         tabWidth = settings.tabWidth
                         isWordwrap = settings.wordWrap
                         isLineNumberEnabled = settings.showLineNumbers
@@ -536,7 +554,10 @@ fun CodeEditorScreen(
                 },
                 update = { editor ->
                     editorRef = editor
-                    editor.setTextSize(settings.editorFontSizeSp)
+                    if (lastAppliedFontSizeSp != settings.editorFontSizeSp) {
+                        editor.setTextSize(settings.editorFontSizeSp)
+                        lastAppliedFontSizeSp = settings.editorFontSizeSp
+                    }
                     editor.tabWidth = settings.tabWidth
                     editor.isWordwrap = settings.wordWrap
                     editor.isLineNumberEnabled = settings.showLineNumbers
