@@ -243,7 +243,7 @@ fun CodeEditorScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Ln ${editorState.cursorLine + 1}:${editorState.cursorColumn + 1} • Py ${editorState.runtimeContextInfo.pythonVersion} • 大纲(${editorState.outlineSymbols.size})",
+                        text = "Ln ${editorState.cursorLine + 1}:${editorState.cursorColumn + 1} • Py${editorState.runtimeContextInfo.pythonVersion}",
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
                         color = MaterialTheme.colorScheme.primary,
@@ -843,12 +843,12 @@ private fun CompactToolbarIconButton(
     IconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.size(34.dp)
+        modifier = Modifier.size(30.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(19.dp)
+            modifier = Modifier.size(17.dp)
         )
     }
 }
