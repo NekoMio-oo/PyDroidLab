@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
-    kotlin("android")
-    kotlin("plugin.compose")
+    id("org.jetbrains.kotlin.android")
     id("com.chaquo.python")
 }
 
@@ -13,43 +12,41 @@ android {
         applicationId = "com.pydroidlab.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.2.0-alpha03"
+        versionCode = 1
+        versionName = "1.0.0"
 
-        vectorDrawables { useSupportLibrary = true }
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
 
-        // Chaquopy needs these ABIs for its native libs.
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+            // Support modern 64-bit ARM devices and x86_64 Android emulators
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
-    // ---- Chaquopy -----------------------------------------------------------
-    // Embedded CPython interpreter.  `version` selects the CPython build.
-    //
-    // Only pure-Python third-party wheels are listed here so the APK stays
-    // small (~40 MB); heavy scientific wheels (numpy/pandas/matplotlib/...)
-    // are installed at runtime on demand via the in-app Package Manager,
-    // which pulls Chaquopy's prebuilt Android wheels.
-    //
-    // NOTE: since Chaquopy 13 the plugin is published to Maven Central and the
-    // configuration block moved to a top-level `chaquopy { }` extension; the
-    // old `android.defaultConfig.python { }` DSL only exists in Groovy builds
-    // of Chaquopy ≤ 12.  See README.md §2 for the full rationale.
-    // ---- -------------------------------------------------------------------
-
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            isMinifyEnabled = false
+            isDebuggable = true
         }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -57,72 +54,86 @@ android {
         buildConfig = true
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     packaging {
         resources {
-            // Chaquopy bundles its own; avoid duplicate META-INF collisions.
-            excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*")
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
 }
 
 chaquopy {
     defaultConfig {
-        version = "3.11"
-        pip {
-            // Pure-python niceties preinstalled so the editor works offline
-            // out of the box. Scientific stack is installed on demand.
-            install("black")
-            install("requests")
-            options("--no-cache-dir")
-        }
-        // tutorials/ 与 snippets/ 需要以「真实文件」的形式存在，
-        // 这样 pdl_resources.py 才能 listdir/open 它们。
-        extractPackages("tutorials", "snippets")
-    }
-    sourceSets {
-        // 默认的 Python 源码根是 src/main/python。bootstrap/ 里的
-        // pdl_runner / pdl_host / pdl_pip ... 是以顶层模块名被 Kotlin 调用的
-        // （Python.getInstance().getModule("pdl_runner")），因此必须把它
-        // 也加成一个源码根，否则这些模块只能以 bootstrap.pdl_runner 访问。
-        getByName("main") {
-            srcDir("src/main/python/bootstrap")
-        }
-    }
-}
+        // Python 3.10 provides full pre-compiled wheel support in Chaquopy's repository
+        // (including numpy, pandas, requests, etc.) and includes pip for runtime package installation.
+        version = "3.10"
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        pip {
+            // Core runtime & HTTP dependencies pre-installed so pip and requests work out of the box
+            install("six")
+            install("certifi")
+            install("charset-normalizer")
+            install("idna")
+            install("urllib3")
+            install("requests")
+
+            // Controlled by `pydroidlab.preinstallScientific` in gradle.properties (default: true)
+            val preinstallScientific = project.findProperty("pydroidlab.preinstallScientific")
+                ?.toString()
+                ?.toBoolean() ?: true
+            if (preinstallScientific) {
+                install("numpy")
+                install("pandas")
+            }
+        }
+
+        pyc {
+            src = false
+        }
     }
 }
 
 dependencies {
-    // --- Compose (Material 3) ---
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    // Internal VT100/ANSI interactive terminal-emulator module
+    implementation(project(":terminal-emulator"))
+
+    // AndroidX Core & Lifecycle
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Jetpack Compose + Material 3
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
+    androidTestImplementation(composeBom)
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 
-    // --- Code editor (Rosemoe sora-editor) ---
-    implementation("io.github.Rosemoe.sora-editor:editor:0.23.6")
+    // Rosemoe Sora Editor (Syntax highlighting, line numbers, auto-indent, bracket matching, find/replace)
+    val soraBom = platform("io.github.Rosemoe.sora-editor:bom:0.23.4")
+    implementation(soraBom)
+    implementation("io.github.Rosemoe.sora-editor:editor")
+    implementation("io.github.Rosemoe.sora-editor:language-textmate")
 
-    // --- Terminal emulator (jackpal Android-Terminal-Emulator via JitPack) ---
-    implementation("com.github.jackpal:Android-Terminal-Emulator:1.0.70")
-
-    // --- Coroutines ---
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Unit & Instrumentation Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }

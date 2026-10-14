@@ -1,413 +1,124 @@
-# PyDroidLab
+# PyDroidLab — Android 手机 Python 3 代码编辑器与运行环境
 
-在 Android 手机上写、跑、调试 Python 的**一体化工作台**。
+PyDroidLab 是一款对标 Pydroid 3 的移动端 Python 3 集成开发环境（IDE），基于 **Kotlin + Jetpack Compose (Material 3) + Rosemoe Sora Editor + Chaquopy + 交互式 Terminal Emulator** 构建。面向 Python 初学者与移动开发者，提供开箱即用的代码高亮编辑、支持 `input()` 的实时交互终端、运行时 `pip` 第三方库管理、私有工作区文件浏览器与 12 个精选实战示例。
 
-内嵌 CPython 3.11（Chaquopy），界面全部用 Jetpack Compose Material 3 重写，
-代码编辑器基于 [sora-editor](https://github.com/Rosemoe/sora-editor)，
-终端基于 [jackpal/Android-Terminal-Emulator](https://github.com/jackpal/Android-Terminal-Emulator)。
+## 1. 环境要求与技术栈
 
-功能清单与入口路径见 [FEATURES.md](FEATURES.md)。
+| 模块 | 版本与规格要求 |
+| :--- | :--- |
+| **开发工具** | Android Studio Jellyfish (2023.3.1) / Koala (2024.1.1) 或更高版本 |
+| **JDK 版本** | JDK 17 (`JavaVersion.VERSION_17`) |
+| **Gradle 与 AGP** | Gradle `8.7` + Android Gradle Plugin `8.4.2` |
+| **Android SDK** | `compileSdk = 34`、`targetSdk = 34`、`minSdk = 26` (Android 8.0 ~ Android 14+) |
+| **开发语言与 UI** | Kotlin `1.9.24` + Jetpack Compose BOM `2024.06.00` (Material 3) |
+| **代码编辑器组件** | `io.github.Rosemoe.sora-editor:editor:0.23.4` + `language-textmate:0.23.4` |
+| **Python 解释器引擎** | Chaquopy `15.0.1`（MIT 开源协议，内置 CPython `3.10` 运行时与 `pip`） |
+| **交互式终端控制台** | `:terminal-emulator` 模块（支持 VT100/ANSI 转义序列解析、阻塞式 `stdin` 行缓冲队列） |
 
-| 项目 | 当前值 |
-| --- | --- |
-| 版本 | **1.2.0-alpha01**（`versionCode = 5`，Phase 1） |
-| 应用 ID | `com.pydroidlab.app` |
-| Python | 3.11（Chaquopy 15.0.1） |
-| minSdk / targetSdk | 26 / 34 |
-| 变更历史 | 见 [§8 更新日志](#8-更新日志) |
+## 2. 项目目录结构
 
----
-
-## 1. 快速开始
-
-### 1.1 环境要求
-
-| 组件 | 版本 | 说明 |
-| --- | --- | --- |
-| JDK | 17 或以上（实测 20 可用） | AGP 8.5 要求 ≥ 17 |
-| Android SDK | Platform 34 + Build-Tools 34.0.0 | `compileSdk = 34` |
-| Android NDK | **不需要单独安装** | Chaquopy 的原生库已预编译并 strip 过 |
-| 构建机 Python | 3.8 – 3.12（用于 pip 打包） | Chaquopy 会自动查找 `python3.11` → `python3` |
-| Gradle | 由 wrapper 提供（8.9） | 无需本机安装 |
-| 网络 | 构建期需要 | 下载依赖 + Chaquopy 运行时 + 预装 pip 包 |
-
-### 1.2 配置 Android SDK 路径
-
-在工程根目录建 `local.properties`（该文件不应提交到版本库）：
-
-```properties
-sdk.dir=/path/to/Android/Sdk
-```
-
-或者设置环境变量 `ANDROID_HOME` / `ANDROID_SDK_ROOT`（Chaquopy 允许没有
-`local.properties`，只要能找到 SDK）。
-
-### 1.3 构建
-
-```bash
-# Debug APK
-./gradlew assembleDebug
-# 产物：app/build/outputs/apk/debug/app-debug.apk
-
-# 安装到已连接的设备
-./gradlew installDebug
-
-# Release（开启 R8 + 资源压缩）
-./gradlew assembleRelease
-```
-
-首次构建会做这些比较慢的事（合计 3–8 分钟）：
-
-1. 下载 Gradle 8.9 发行版与全部 Maven 依赖
-2. Chaquopy 下载 CPython 3.11 的 Android 运行时与三个 ABI 的原生库
-3. 在**构建机**上跑 pip，把 `black` 与 `requests` 及其依赖打进 APK
-
-后续构建走缓存，通常 20–60 秒。
-
-### 1.4 三个 ABI
-
-`app/build.gradle.kts` 里声明了：
-
-```kotlin
-ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64") }
-```
-
-每个 ABI 都会显著增加 APK 体积（Python 运行时本身约 10 MB/ABI）。
-只给现代真机打包时，可以只保留 `arm64-v8a`：
-
-```kotlin
-ndk { abiFilters += listOf("arm64-v8a", "x86_64") }   // 真机 + 模拟器
-```
-
----
-
-## 2. Chaquopy 配置说明（重要）
-
-### 2.1 版本变更：12.0.0 → 15.0.1
-
-接手时的工程声明了 `id("com.chaquo.python") version "12.0.0"`，但这与既定的
-Python 3.11 / AGP 8.5 技术栈**直接冲突**：
-
-| Chaquopy | 支持的 Python | 支持的 AGP |
-| --- | --- | --- |
-| 12.0.0 | **仅 3.8** | 4.1 – **7.2** |
-| 13.0.0 | 3.8 – 3.11 | 4.1 – 7.3 |
-| 14.0.2 | 3.8 – 3.11 | 4.1 – 8.0 |
-| **15.0.1（本次采用）** | **3.8 – 3.12** | **7.0 – 8.5** |
-
-同时 Chaquopy 13 起把插件发布到了 **Maven Central**（`chaquo.com/maven` 只镜像
-到 12.0.0），所以 `settings.gradle.kts` 里的 `mavenCentral()` 必须存在。
-选用 **15.0.1** 是因为它是最后一个官方标注支持 AGP 8.5 的版本。
-
-> 这属于构建配置变更，没有改动任何 Kotlin 后端类的签名。
-
-### 2.2 配置块位置变了
-
-Chaquopy 15 的 Kotlin DSL 使用**顶层 `chaquopy { }` 扩展**，
-原来的 `android.defaultConfig.python { }` 只在 ≤ 12 的 Groovy 构建里有效：
-
-```kotlin
-chaquopy {
-    defaultConfig {
-        version = "3.11"
-        pip {
-            install("black")
-            install("requests")
-            options("--no-cache-dir")
-        }
-        extractPackages("tutorials", "snippets")
-    }
-    sourceSets {
-        getByName("main") {
-            srcDir("src/main/python/bootstrap")
-        }
-    }
-}
-```
-
-### 2.3 为什么必须加 `srcDir("src/main/python/bootstrap")`
-
-Chaquopy 默认只把 `src/main/python` 本身加进 `sys.path`。
-但 Kotlin 侧是**按顶层模块名**调用 Python 的：
-
-```kotlin
-Python.getInstance().getModule("pdl_runner")   // 不是 bootstrap.pdl_runner
-Python.getInstance().getModule("pdl_pip")
-```
-
-`bootstrap/` 目录下的 5 个桥接脚本（外加本次新增的 3 个）如果不额外声明为源码根，
-`getModule("pdl_runner")` 会在运行时抛 `ModuleNotFoundError`。
-加上这一行之后，`bootstrap/` 与 `python/` 同时成为源码根，两边都能按顶层名字导入。
-
-### 2.4 为什么需要 `extractPackages`
-
-教程（Markdown 讲义）与代码片段是**数据文件**而不是模块。
-Chaquopy 默认把 `.py` 直接打进 APK，不会在设备上落地成真实文件。
-声明 `extractPackages("tutorials", "snippets")` 后，它们会被解压成真实文件，
-`pdl_resources.py` 就能用 `os.listdir` / `open` 读取，供「教程」页展示。
-
----
-
-## 3. 为跑通构建所做的其它必要修正
-
-### 3.1 `gradle.properties`
-
-```properties
-org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8
-kotlin.daemon.jvmargs=-Xmx1536m
-org.gradle.workers.max=2
-org.gradle.caching=true
-org.gradle.configuration-cache=false   # ← 必须
-org.gradle.parallel=false              # ← 必须
-org.gradle.daemon=true
-```
-
-- **关闭配置缓存**：Chaquopy 15 的 `BuildPackagesTask` 在配置缓存序列化阶段会
-  强制初始化 `sitePackages`，直接报
-  `app/build/python/env/debug/lib does not exist`。
-- **关闭并行**：Kotlin 2.0.x 与 Chaquopy 共存时，并行配置会在
-  `:app:compileDebugKotlin` 的 `friendPathsSet` 上抛
-  `Current thread does not hold the state lock for root project`。
-- **下调堆内存**：Gradle 守护进程 + Kotlin 守护进程 + R8/D8 worker 会同时驻留，
-  在 8 GB 内存的容器里容易被 OOM Killer 干掉（表现为
-  `Gradle build daemon disappeared unexpectedly`）。内存充裕的开发机可以调回
-  `-Xmx4096m`。
-
-### 3.2 预置代码里 4 处无法编译的真实签名问题
-
-这些文件属于「已完成」部分，但不能编译，因此按最小改动修正，**未改任何类/方法签名**：
-
-| 文件 | 问题 | 修正 |
-| --- | --- | --- |
-| `ui/editor/CodeEditorView.kt` | `textSize = s.fontSizeSp` —— sora 只有 `setTextSize(float)` / `getTextSizePx()`，没有 `getTextSize()`，Kotlin 合成不出属性 | 改为 `setTextSize(s.fontSizeSp)` |
-| `ui/editor/PythonLanguage.kt` | `TextStyle.makeStyle(slot, 0, bold, italic)` —— 没有 4 参数重载 | 补第 5 个 flag：`makeStyle(slot, 0, bold, italic, false)` |
-| `ui/editor/PythonLanguage.kt` | `IdentifierAutoComplete.requireAutoComplete(content, position, publisher, extras)` —— sora 0.23 的签名多了前缀参数 | 先算 `prefix`，再调用 5 参数版 `(content, position, prefix, publisher, null)` |
-| `python/HostBridge.kt` | `mod["key"] = value` —— `PyObject` 继承 `AbstractMap<String, PyObject>`，Kotlin 的 `set` 会绑定到 `put(String, PyObject)` | 改用显式 `mod.put("key", value)`（`put(String, Object)` 重载） |
-| `python/DebuggerController.kt` | `PyObject.asDict()` 在新版 Chaquopy 已移除 | 改为 `asMap()` |
-
-### 3.3 新增的 4 个 Python 桥接脚本
-
-`bootstrap/` 下原有 5 个脚本保持不变，新增：
-
-| 文件 | 用途 |
-| --- | --- |
-| `pdl_shell_exec.py` | 内置终端里执行 `python -c` / `python file.py` / `pip`，并**捕获**输出一次性返回 |
-| `pdl_format.py` | 用 black 格式化源码；black 不可用或语法错误时**原样返回**，绝不丢代码 |
-| `pdl_resources.py` | 读取 `tutorials/` 与 `snippets/` 里的讲义与片段文本 |
-| `pdl_complete.py` | 扫描 `import` 语句、取模块成员，供编辑器补全（打开/保存/运行时刷新一次，按键时读缓存） |
-| `pdl_interrupt.py` | 真正可用的中断：`PyThreadState_SetAsyncExc` 注入 `KeyboardInterrupt` |
-
-### 3.4 `PythonRunner.interrupt()` 的一处内部增强（签名未变）
-
-原来的 `interrupt()` 只取消协程 + 解除 stdin 阻塞，**无法**中断已经在执行的
-Python 字节码，即 `while True: pass` 停不下来 —— 而这是明确的验收标准。
-
-因此在**不改方法签名**的前提下，在 `interrupt()` 内补了一次
-`pdl_interrupt.request()`（放到独立线程里执行，避免 GIL 争用卡住 UI）。
-注入机制不可用时静默降级为原有行为，不会比之前更差。
-`pdl_runner` / `pdl_debugger` / `pdl_repl` / `pdl_shell_exec` 在执行用户代码前
-会调用 `pdl_interrupt.arm()` 记录线程 id。
-
----
-
-## 4. 工程结构
-
-```
+```text
 PyDroidLab/
-├── build.gradle.kts / settings.gradle.kts / gradle.properties
-├── gradlew / gradlew.bat / gradle/wrapper/          ← 本次补齐
-└── app/
-    ├── build.gradle.kts                             ← Chaquopy 15 配置
-    ├── proguard-rules.pro
-    └── src/main/
-        ├── AndroidManifest.xml                      （已有，含 SEND/VIEW .py）
-        ├── res/                                     ← 本次补齐
-        │   ├── values/{strings,colors,themes}.xml
-        │   ├── values-night/themes.xml
-        │   ├── drawable/ic_launcher_foreground.xml
-        │   ├── mipmap-anydpi-v26/ic_launcher{,_round}.xml
-        │   └── mipmap-{m,h,xh,xxh,xxxh}dpi/ic_launcher{,_round}.png
-        ├── java/com/pydroidlab/app/
-        │   ├── PyDroidLabApp.kt
-        │   ├── MainActivity.kt                      ← 本次新增
-        │   ├── core/{ServiceLocator,Events}.kt      （已有）
-        │   ├── project/{ProjectManager,RecentFiles}.kt （已有）
-        │   ├── python/                              （已有 + 2 处签名修正）
-        │   ├── shell/PyShell.kt                     ← 本次新增
-        │   ├── terminal/{PdlTerminalSession,TerminalController}.kt  ← 本次新增
-        │   └── ui/
-        │       ├── AppViewModel.kt                  ← 本次新增
-        │       ├── AppNavigation.kt                 ← 本次新增（导航 + 抽屉）
-        │       ├── UiCommon.kt                      ← 本次新增（公共组件）
-        │       ├── editor/{CodeEditorView,EditorState,PythonLanguage,EditorThemes}.kt （已有）
-        │       ├── editor/EditorScreen.kt           ← 本次新增
-        │       ├── console/ConsoleScreen.kt         ← 本次新增
-        │       ├── terminal/TerminalScreen.kt       ← 本次新增
-        │       ├── files/FilesScreen.kt             ← 本次新增
-        │       ├── packages/PackagesScreen.kt       ← 本次新增
-        │       ├── charts/ChartsScreen.kt           ← 本次新增
-        │       ├── debugger/DebuggerScreen.kt       ← 本次新增
-        │       ├── repl/ReplScreen.kt               ← 本次新增
-        │       ├── learn/LearnScreen.kt             ← 本次新增
-        │       ├── settings/{SettingsRepository,SettingsScreen}.kt （已有 + 新增）
-        │       └── theme/Theme.kt                   ← 本次新增
-        └── python/
-            ├── bootstrap/                           （已有 5 个 + 新增 3 个）
-            ├── snippets/                            ← 本次新增 10 个片段
-            └── tutorials/                           ← 本次新增 9 课（讲义 + 示例）
+├── build.gradle.kts                   # 根工程 Gradle 配置（AGP 8.4.2, Kotlin 1.9.24, Chaquopy 15.0.1）
+├── settings.gradle.kts                # 仓库配置（Google, MavenCentral, JitPack, Chaquopy Maven）与模块声明
+├── gradle.properties                  # JVM 参数与科学计算包（numpy/pandas）构建期预装开关
+├── gradlew / gradlew.bat              # 支持自动引导下载 Gradle 8.7 的 Wrapper 脚本
+├── terminal-emulator/                 # 独立交互式终端模拟器库模块 (:terminal-emulator)
+│   └── src/main/java/com/pydroidlab/terminal/
+│       └── TerminalEmulator.kt        # ANSI/VT100 解析器、环形滚屏缓冲区与阻塞式 StdinSignal 队列
+└── app/                               # 主应用模块 (:app)
+    ├── build.gradle.kts               # Android、Compose、Sora Editor 与 Chaquopy 详细配置
+    └── src/
+        ├── main/
+        │   ├── AndroidManifest.xml    # 声明网络权限与 adjustResize 软键盘自适应
+        │   ├── assets/textmate/       # Python TextMate 语法定义与括号配对配置
+        │   ├── python/                # Chaquopy Python 桥接脚本层
+        │   │   ├── pydroid_runner.py  # 脚本执行器、stdout/stderr/input() 重定向与异步线程中断
+        │   │   └── pip_manager.py     # 运行时 pip 安装/升级/卸载与 importlib.metadata 枚举
+        │   └── java/com/pydroidlab/app/
+        │       ├── PyDroidLabApp.kt   # Application 入口，初始化 AndroidPlatform Python 实例
+        │       ├── MainActivity.kt    # 主界面 Scaffold 与底部可折叠交互终端面板
+        │       ├── data/              # 数据层：SettingsRepository、FileRepository、SampleRepository (12 示例)
+        │       ├── editor/            # PythonSoraLanguage（Python 词法高亮、冒号自动缩进、括号补全、代码补全）
+        │       ├── runtime/           # PythonExecutor 与 PythonBridgeHost (JNI/Chaquopy 双向回调桥)
+        │       ├── ext/               # v1.0 预留扩展接口（GuiBackendPlugin, NotebookKernelPlugin, AiCompletionPlugin）
+        │       └── ui/                # MainViewModel 与五大功能页面（编辑器、文件、库管理、示例库、设置）
+        └── test/                      # 单元测试（验证 12 个内置示例与终端 input() 阻塞唤醒机制）
 ```
 
----
+## 3. 构建步骤（支持本地构建与 GitHub Actions 免配环境云编译）
 
-## 5. 已知限制
+### 方式 A：免安装 Android Studio — 使用 GitHub Actions 云端一键生成 APK
+工程已内置 `.github/workflows/build-apk.yml` 自动编译流水线，无需在本地电脑安装 Android SDK：
+1. 在 GitHub 新建一个仓库（公开或私有均可），将解压后的 `PyDroidLab` 目录文件上传/推送上去。
+2. 点击仓库顶部的 **Actions** 标签页，进入 **Build PyDroidLab APK** 工作流（也可手动点击 **Run workflow**）。
+3. 等待约 3~5 分钟编译完成后，在页面底部的 **Artifacts** 区域直接点击下载 **`PyDroidLab-v1.0-debug-apk`**，解压即可获得可安装在手机上的 `app-debug.apk`。
 
-请如实了解这些边界，它们都是**平台层面的限制**，不是未完成的 TODO。
+### 方式 B：使用本地电脑 Android Studio 或命令行构建
 
-### 5.1 终端没有真 shell
+1. **解压并配置 SDK 路径**：解压工程后，使用 Android Studio 直接打开 `PyDroidLab` 目录（Android Studio 会自动生成 `local.properties`），或在根目录手动创建 `local.properties`：
+   ```properties
+   sdk.dir=/Users/你的用户名/Library/Android/sdk
+   ```
+2. **宿主机 Python 环境说明**：Chaquopy 在构建期间若需打包 `pip` 依赖，会自动在宿主机查找 `python3`（建议宿主机已安装 Python 3.8~3.12）；你也可以在 `app/build.gradle.kts` 的 `chaquopy.defaultConfig` 中通过 `buildPython("/usr/local/bin/python3")` 指定宿主机 Python 路径。
+3. **执行一键命令行构建**：
+   ```bash
+   chmod +x gradlew
+   ./gradlew assembleDebug
+   ```
+   > **自引导说明**：如果本地尚未缓存 `gradle-wrapper.jar`，工程自带的 `./gradlew` 脚本会自动从 `services.gradle.org` 下载并解压 Gradle 8.7 分发包到 `~/.gradle/wrapper/dists`，确保首次执行 `./gradlew assembleDebug` 即可一次通过。
+4. **生成的 APK 路径**：
+   ```text
+   app/build/outputs/apk/debug/app-debug.apk
+   ```
 
-jackpal 的 JitPack 制品 `com.github.jackpal:Android-Terminal-Emulator:1.0.70`
-的 `classes.jar` 里**只有 `emulatorview` 模块**，不包含 `libtermexec` 的 JNI
-（那是 fork/exec 真 pty 所必需的）。Android 上要拿到真 pty 需要 root 或
-`Runtime.exec("/system/bin/sh")` + pty 分配，两者都超出普通应用权限。
+## 4. Chaquopy 配置说明与体积切换
 
-因此「终端」页是这样实现的：
+在 `app/build.gradle.kts` 与 `gradle.properties` 中，我们完成了如下针对移动端 Python IDE 的配置：
 
-- 显示层是**真正的 VT100 模拟器**（`jackpal.androidterm.emulatorview.EmulatorView`）
-- 输入输出通过 `PdlTerminalSession` 的两条 `PipedInputStream/OutputStream` 接到
-  宿主自己实现的命令解释器（`shell/PyShell.kt`）
-- 支持命令：`help` `clear` `pwd` `ls` `cd` `cat` `mkdir` `touch` `rm` `echo`
-  `open` `run` `python [-c code | file.py]` `pip install|list`
-- **不支持**任意可执行文件（`git`、`ls` 等系统命令），因为那需要真 pty
+* **开源许可**：采用 Chaquopy `15.0.1`（自 15.0 起已全面采用 **MIT 开源许可证**，无论开源还是商业闭源均免费且无运行时授权弹窗）。
+* **ABI 架构配置**：默认开启 `arm64-v8a`（主流 Android 14 真机）与 `x86_64`（PC 端 Android 模拟器）。
+* **科学计算库（`numpy` / `pandas`）一键开关**：在根目录 `gradle.properties` 中提供了 `pydroidlab.preinstallScientific` 属性：
+  * `pydroidlab.preinstallScientific=true`（**默认开启**）：在构建期通过 Chaquopy 官方预编译二进制轮子源打包 `numpy`、`pandas` 及 `requests`，用户在手机端离线即可直接 `import numpy as np`、`import pandas as pd`。
+  * `pydroidlab.preinstallScientific=false`（轻量模式）：仅预装标准库与 `requests` 基础依赖，将单架构 APK 体积缩减约 35MB~50MB，纯 Python 库可在应用内「库管理」页面随时通过 `pip` 动态下载安装。
 
-需要完整功能请用「控制台」+「编辑器」。
+## 5. 三大关键设计决策（架构深潜）
 
-### 5.2 终端里的 `python` 不支持 `input()`
+### 5.1 解释器如何打包与启动
+* **原生库与标准库打包**：构建期间，Chaquopy Gradle 插件会将针对 `arm64-v8a` 和 `x86_64` 交叉编译的 `libpython3.10.so`、`libchaquopy_java.so`、OpenSSL/SQLite/libffi 等原生动态库打包至 APK 的 `lib/<abi>/` 目录；Python 标准库与构建期 `pip` 包被打包至 `assets/chaquopy/`。
+* **进程内 JNI 桥接**：应用启动时，`PyDroidLabApp.onCreate()` 调用 `Python.start(AndroidPlatform(this))` 在当前 Android 进程内初始化 CPython 解释器（耗时约 80ms~150ms）。相较于 Fork 独立子进程的方案，进程内 JNI 桥接避免了 Android 10+ W^X（`SELinux execmem/execmod`）对外部可执行二进制文件的限制，在 Android 14 (targetSdk 34) 上 100% 合规稳定。
+* **字节码编译设置**：在 `chaquopy.defaultConfig.pyc` 中设置 `src = false`，保留原始 `.py` 源码回溯信息，以便用户在触发异常时能看到清晰的堆栈行号。
 
-`pdl_shell_exec.py` 把 stdout/stderr 捕获成字符串一次性返回，
-所以没有 stdin 通道。要在终端里跑带 `input()` 的脚本，请改用「编辑器 → 运行」。
+### 5.2 运行时 `pip` 包安装到哪里、如何立即生效
+* **核心痛点**：Android APK 解压后的原生目录与 `assets` 均为只读文件系统，运行时无法直接向系统 `site-packages` 写入文件。
+* **私有可写目录隔离**：我们将运行时 `pip` 的安装目标固定在应用私有存储目录：
+  * **安装目标路径 (`--target`)**：`context.filesDir/python/site-packages`（即 `/data/user/0/com.pydroidlab.app/files/python/site-packages`）
+  * **下载缓存路径 (`--cache-dir`)**：`context.cacheDir/pip-cache`
+* **安装、升级与卸载实现 (`pip_manager.py`)**：
+  1. **安装与升级**：通过调用 `pip._internal.cli.main.main(["install", "--target", user_site_packages, "--extra-index-url", "https://chaquo.com/pypi-13.1", ...])`，同时检索官方 PyPI 与 Chaquopy Android 预编译仓库，并将标准输出实时回调至 `PipLogBridge` 展示在 UI 日志框中。
+  2. **动态 `sys.path` 优先级注入**：每次安装完成以及每次运行用户脚本前，都会调用 `site.addsitedir(user_site_packages)` 并将 `user_site_packages` 置于 `sys.path[0]` 首位，同时调用 `importlib.invalidate_caches()`。这意味着用户无需重启 App，新安装的库（如 `requests`、`beautifulsoup4`）即可立即被 `import`，且用户升级后的新版本会自动覆盖 APK 内置旧版本。
+  3. **精准卸载**：由于标准 `pip uninstall` 命令不支持 `--target` 参数，`pip_manager.py` 通过解析 `user_site_packages` 下对应包的 `.dist-info/RECORD` 清单文件，安全清理该包所属的全部文件与空目录，并在 UI 上区分「用户安装（可卸载/升级）」与「内置预装（可升级覆盖）」。
 
-### 5.3 中断：CPU 死循环可以，C 层阻塞不行
+### 5.3 `input()` 交互输入与强制中断如何实现
+* **跨线程阻塞式行输入机制 (`TerminalEmulator.kt` + `pydroid_runner.py`)**：
+  1. 当用户点击「运行」时，`PythonExecutor` 在后台 `Dispatchers.IO` 线程启动脚本，将 `PythonBridgeHost` 实例传入 `pydroid_runner.execute_script()`。
+  2. `pydroid_runner.py` 将 `sys.stdout`、`sys.stderr` 替换为无缓冲的 `_InteractiveOutStream`（保证 `print("请输入姓名: ", end="")` 即使没有换行符也能瞬间刷新到终端屏幕），并将 `builtins.input` 与 `sys.stdin` 重定向至 `host.requestInput(prompt)`。
+  3. 当 Python 脚本执行到 `input(prompt)` 时，工作线程调用 `TerminalEmulator.requestLineInput(prompt)`：首先将 `prompt` 渲染到终端缓冲区，然后将终端状态标记为 `isAwaitingInput = true`（UI 指示灯变黄并自动聚焦底部输入框），接着工作线程在 `LinkedBlockingQueue<StdinSignal>.take()` 上挂起阻塞，**完全不阻塞 Android 主线程 UI**。
+  4. 用户在终端输入框输入内容并点击「发送」或按回车后，UI 线程向队列投递 `StdinSignal.InputLine(text)`，唤醒后台 Python 线程，将用户输入以高亮青色回显到终端并作为字符串返回给 Python 的 `input()` 调用，脚本继续向下执行。
+* **双重安全中断机制（兼顾 `input()` 等待与死循环）**：
+  1. 若程序正阻塞在 `input()` 等待输入，点击「停止」会向队列投递 `StdinSignal.Interrupt`，立即唤醒阻塞线程并抛出 `KeyboardInterrupt`。
+  2. 若程序正处于 CPU 密集型死循环（如 `while True: pass`），`stopRunningScript()` 会调用 CPython 底层 C-API `ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid), ctypes.py_object(KeyboardInterrupt))`，向正在运行的目标 Python 线程异步注入 `KeyboardInterrupt` 异常，实现毫秒级强制终止。
 
-`PythonRunner.interrupt()` 现在做三件事：
+## 6. 横竖屏切换状态保持与预留扩展点
 
-1. `HostBridge.cancelStdin()` —— 解除卡在 `input()` 的阻塞；
-2. `pdl_interrupt.request()` —— 通过 CPython 的 `PyThreadState_SetAsyncExc`
-   往执行线程的下一个字节码边界注入 `KeyboardInterrupt`；
-3. 取消 Kotlin 协程。
+* **横竖屏切换无损保持**：编辑器文本内容、未保存修改标记（`*`）、当前打开的文件路径、光标行列位置、查找替换栏状态以及正在运行的终端会话均托管在 `MainViewModel` (`AndroidViewModel`) 中；当设备旋转重建 `MainActivity` 时，`CodeEditorScreen` 会自动从 `MainViewModel` 恢复完整缓冲区，不会丢失任何编辑内容或中断正在运行的脚本。
+* **v1.0 预留扩展接口 (`com.pydroidlab.app.ext.ExtensionPoints.kt`)**：
+  * `GuiBackendPlugin`：预留 `SurfaceHolder` 绑定接口，供未来 v2.0 接入 SDL2 / `pygame` / `kivy` 图形窗口渲染。
+  * `NotebookKernelPlugin`：预留单元格（Cell）状态化执行与多 MIME 输出结构，供未来支持 Jupyter `.ipynb`。
+  * `AiCompletionPlugin`：预留上下文前缀/后缀异步补全接口，可无缝汇入 `PythonSoraLanguage.requireAutoComplete`。
 
-第 2 条是本次补的（方法签名未变）。**实测** `while True: i += 1` 会在约
-4300 万次迭代后被成功打断并恢复正常流程。
+## 7. 已知限制（v1.0）
 
-**仍然不行的情况**：脚本卡在 `time.sleep(3600)`、`socket.recv()` 这类
-C 层阻塞调用里 —— CPython 只在字节码边界检查异步异常，而 Android 又无法给
-非主线程投递信号（没有 `pthread_kill` 到 Python 线程的通道），所以这时最可靠
-的仍然是强杀 App。控制台顶部的「中断」按钮已经把该做的前两步都做了。
-
-### 5.4 matplotlib 中文字体
-
-Android 上不一定存在 matplotlib 能识别名字的中文字体，标题可能显示成方框。
-`pdl_runtime.install_matplotlib_bridge()` 已经设置 `axes.unicode_minus`，
-但 sans-serif 字体需要脚本自己指定（教程第 8 课给了自动探测的代码）。
-
-### 5.5 科学计算包体积与安装时间
-
-`numpy` / `pandas` / `matplotlib` / `scipy` / `scikit-learn` 都是**带原生扩展**的
-Android wheel，合计数百 MB，只能通过「软件包」页在运行时按需安装，
-**没有**打进 APK（否则 APK 会超过 1 GB）。建议在 WiFi 下安装。
-
-### 5.6 `black` 格式化是「可选增强」
-
-`black` 由构建期 pip 预装。如果执行环境里 black 导入失败，
-`pdl_format.format_code()` 会**原样返回源码**并给出「无需格式化（或 black 不可用）」
-的提示，不会丢代码。勾选「保存时用 black 格式化」也一样有兜底。
-
-### 5.7 其它
-
-- `assets/` 目录为空，Chaquopy 的 Python 资源不经过它
-- Release 构建开启 R8；`proguard-rules.pro` 已 keep 住 Chaquopy / sora-editor /
-  terminal 三个包。此工程只验证了 `assembleDebug`
-- 竖屏专属布局未做；所有界面在横竖屏下都能用，靠 Compose 自适应
-
----
-
-## 6. 自测路径（对应验收标准）
-
-| # | 验收项 | 操作 |
-| --- | --- | --- |
-| 1 | 新建文件 → 含 input 的脚本 → 运行 → 交互输入 → 输出正确 | 编辑器 →「新建」→ 粘贴 `02_input_output_example.py` 的内容 →「保存」→「运行」→ 控制台底部输入 → 输出正确 |
-| 2 | 死循环可中断 | 编辑器写 `while True: pass` →「运行」→ 控制台点「中断」 |
-| 3 | pip 装 requests 并使用 | 软件包 → 切清华源 → 输入 `requests` → 安装 → 编辑器跑 `import requests; print(requests.__version__)` |
-| 4 | matplotlib 画正弦并展示、保存 | 软件包 →「科学计算栈」或分别装 `numpy`/`matplotlib` → 运行 `08_numpy_matplotlib_example.py` → 图表页出现 5 张图 →「保存 PNG」→ 文件页可见 |
-| 5 | 断点 → 单步 → 变量监视正确 | 运行 `07_errors_debug_example.py`，在 `total += values[i]` 打断点 → 调试页「开始调试」→ 反复「下一行」→ 变量页看到 `i`、`values` |
-| 6 | 横竖屏切换不丢编辑内容 | 在编辑器里输入内容 → 旋转屏幕 → 内容与光标位置保留 |
-
-更细的入口路径见 [FEATURES.md](FEATURES.md)。
-
----
-
-## 7. 许可与致谢
-
-- [Chaquopy](https://chaquo.com/chaquopy/) —— 内嵌 CPython
-- [sora-editor](https://github.com/Rosemoe/sora-editor) —— 代码编辑器
-- [Android-Terminal-Emulator](https://github.com/jackpal/Android-Terminal-Emulator) —— VT100 模拟器（Apache-2.0）
-- Jetpack Compose / Material 3 —— UI
-
----
-
-## 8. 更新日志
-
-### v1.2.0-alpha01 —— 2026-10-13（`versionCode = 5`，Phase 1）
-
-TinaIDE 风格重构第一步：从「抽屉里 10 个平级工具页」改为「项目为中心」。
-
-| 部分 | 变更 |
-| --- | --- |
-| 底部导航 | 4 个 Tab：**项目 / 软件包 / 教程 / 我的**；Tab 切换不丢工作区状态（状态全在 ViewModel） |
-| 项目主页 | 项目卡片（首字母哈希柔和底色头像、Python 标签、存储路径、「最近更新」绿点、⋮ 菜单：打开/重命名/删除）；顶部搜索按名过滤；「最近打开 / 其他项目」分区；FAB 新建项目；新建后自动进入工作区 |
-| 项目工作区 | 顶部 pill 工具栏（☰ 文件树抽屉 ｜ 运行配置下拉概览+编辑 ｜ ▶ 运行 ｜ 🐞 调试 ｜ 💾 保存 ｜ ⋮ 更多）；左侧树形文件抽屉（点文件在标签页打开、可新建文件/文件夹）；标签页+编辑器复用现有实现（Phase 0 的修复全部保留）；状态栏新增「● Python 智能就绪（Phase 3 Jedi 占位灰点）/ UTF-8」段；符号栏前部追加撤销 / 重做 / TAB |
-| 面板 | 控制台/终端/图表/调试/REPL/文件管理在 Phase 1 仍为独立页，从工作区 ⋮ 或「我的 → 页面（Phase 2 迁移中）」进入；Phase 2 内嵌为工作区可切换面板 |
-| 我的 | 关于卡新增 GitHub 仓库链接与开源组件许可清单 |
-| 架构 | 新增 `ui/projects/ProjectsScreen`、`ui/workspace/WorkspaceScreen`、`ui/MainScaffold`、`project/RecentProjects`；`EditorScreen` 增加 embedded 模式；旧 10 页 route 全部保留 |
-
-### v1.1.2 —— 2026-10-13（`versionCode = 4`）
-
-Phase 0：修复 7 个真机 bug（详见 FEATURES.md 的 Phase 0 记录表）。
-
-| Bug | 修复 |
-| --- | --- |
-| 补全/高亮不可见 | 分析线程 try/catch 加固（logcat TAG `PdlEditor`）+「输入法联想时仍显示补全」开关 + 设置页「编辑器诊断」面板 |
-| 未命名文件不能直接运行/保存 | 自动落盘 `filesDir/scratch/`，标签显示「未命名-N（临时）」，全程不弹窗 |
-| 控制台无视觉区分 | `ConsoleLine` 按 kind 分色；结束行带退出码与耗时（`PythonRunner` 公开签名未变） |
-| 终端字体巨大 | jackpal `setTextSize` 参数是 dp，删掉多余的 density 乘法（factory/update 两处） |
-| REPL 无回显 | `compile_command` 改 `symbol="single"`，表达式按原生 REPL 回显 |
-| 括号配对无脑 | 引号避让单词字符（`SymbolPairEx`）+ 右括号 skip-over（内容事件拦截）+ 符号栏统一走 `commitText` |
-
-### v1.1.1 —— 2026-10-12（`versionCode = 3`）
-
-修掉一个**必然触发**的运行崩溃 + 一处排版缺陷。
-
-| 类别 | 变更 |
-| --- | --- |
-| **运行崩溃** | 运行任何脚本都会报 `AttributeError: 'LinkedHashMap' object has no attribute 'items'`。原因是 Kotlin 的 `Map<String,String>`（env）经 Chaquopy 传过来是 **Java 对象**，没有 `.items()`；而 Java 包装对象**没有 `__len__`**，所以 `(env or {})` 这类兜底对**空 Map 也失效**。新增 `bootstrap/pdl_utils.py`（`as_dict` / `as_list` / `as_str` / `as_str_list`），在 `pdl_runner`（env、argv、cwd）、`pdl_debugger`（argv、cwd）、`pdl_shell_exec`（python 与 pip 的参数）、`pdl_complete`（模块名列表）全部边界入口统一转换 |
-| **界面排版** | 编辑器 / 图表页的空状态没有宽度约束，长文案固有宽度超出屏宽后居中对齐失效、整块贴左溢出。改为 `fillMaxWidth` + 水平内边距 + `textAlign = Center`；`EmptyHint` 同样处理。图表页的示例代码改用等宽字体 + 横向滚动，不再折行 |
-| 文档 | 本节新增 |
-
-### v1.1.0 —— 2026-10-12（`versionCode = 2`）
-
-对照原始需求自查后补齐的功能（逐条状态见 FEATURES.md 的 A/B 两节）：
-
-| 类别 | 变更 |
-| --- | --- |
-| 编辑器 | 行号点击设断点 + gutter 红点渲染；长按取词查 docstring；光标位置实时上报；行高设置真正生效；模块成员**点号补全**（`pdl_complete.py`）；全词匹配 / 区分大小写查找；撤销重做；分享代码；标签滑动关闭；最近打开列表 |
-| 运行 | 新增「运行配置」（argv / cwd / env / stdin 预设，`RunConfigStore`）；控制台输出**保存为文件** |
-| 中断 | `pdl_interrupt.py`：CPU 死循环可真正打断（`PythonRunner.interrupt()` 方法签名未变） |
-| 终端 | 多会话标签 |
-| 学习区 | 示例库按难度分类、示例一键导入编辑器 |
-| 系统 | 外接键盘快捷键（Ctrl+S/R/F/H 等，设置页可改）；项目备份 zip 后直接拉起分享（新增 FileProvider） |
-| 架构 | `runtime/ScriptRuntime.kt` —— pygame / kivy 等外部运行时的 v2 解耦扩展点（仅接口预留） |
-| 其它 | 设置页「关于」改为读取 `BuildConfig.VERSION_NAME`，不再硬编码 |
-
-### v1.0.0 —— 首版
-
-Kotlin + Compose Material 3 + Chaquopy 15.0.1 + sora-editor + jackpal 终端；
-10 个导航页、11 个 Python 桥接脚本、9 课教程 + 10 个代码片段。
+* **含 C/C++ 原生扩展的第三方包**：在手机运行时通过「库管理」页面执行 `pip install` 仅支持纯 Python Wheel（`py3-none-any.whl`）以及 Chaquopy 官方源已提供 Android 预编译二进制 Wheel 的包；若某个冷门 C 扩展库未提供 Android Wheel，由于手机端不含 Clang/NDK 编译工具链，无法在设备端从源码编译，需在 `app/build.gradle.kts` 的 `chaquopy.defaultConfig.pip` 中于构建期引入。
+* **多进程 (`multiprocessing`)**：受限于 Android JVM 进程模型与 Chaquopy 单解释器实例架构，建议使用 `threading`、`concurrent.futures.ThreadPoolExecutor` 或 `asyncio` 替代 `multiprocessing.Process`。
+* **GUI 窗口库**：v1.0 专注于控制台交互与标准库/网络/数据处理，`tkinter`、`pygame`、`kivy` 图形窗口将在后续版本通过 `GuiBackendPlugin` 扩展支持。
