@@ -10,3 +10,7 @@
 local.properties
 app/build/
 terminal-emulator/build/
+
+# Never commit local push helper scripts containing tokens
+push_to_github.bat
+push_to_github.sh

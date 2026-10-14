@@ -6,7 +6,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -23,14 +25,46 @@ data class PipOperationResult(
     val message: String
 )
 
+data class AstSyntaxDiagnostic(
+    val line: Int,
+    val column: Int,
+    val endColumn: Int,
+    val message: String
+)
+
+data class AstOutlineSymbol(
+    val name: String,
+    val kind: String,
+    val line: Int,
+    val column: Int
+)
+
+data class AstAnalysisResult(
+    val diagnostics: List<AstSyntaxDiagnostic> = emptyList(),
+    val outline: List<AstOutlineSymbol> = emptyList()
+)
+
+data class RuntimeContextInfo(
+    val pythonVersion: String = "3.10",
+    val fullVersion: String = "",
+    val platform: String = "",
+    val cwd: String = "",
+    val workspaceDir: String = "",
+    val userSitePackages: String = "",
+    val sysPath: List<String> = emptyList(),
+    val loadedModulesCount: Int = 0
+)
+
 /**
- * Manages background Python script execution and runtime pip operations via Chaquopy.
+ * Manages background Python script execution, interactive REPL, AST static analysis,
+ * runtime context diagnostics, and pip operations via Chaquopy.
  */
 class PythonExecutor(
     val terminal: TerminalEmulator,
     private val workspaceDir: File,
     private val userSitePackagesDir: File,
-    private val pipCacheDir: File
+    private val pipCacheDir: File,
+    private val hardwareBridge: AndroidHardwareBridge
 ) {
     private val isExecuting = AtomicBoolean(false)
     private var currentThread: Thread? = null
@@ -46,7 +80,7 @@ class PythonExecutor(
         onComplete: (exitCode: Int, elapsedMs: Long) -> Unit = { _, _ -> }
     ): Job? {
         if (!isExecuting.compareAndSet(false, true)) {
-            terminal.writeSystemMessage("A Python script is already running. Stop it first before starting a new run.", isError = true)
+            terminal.writeSystemMessage("已有 Python 任务正在运行，请先点击停止按钮。", isError = true)
             return null
         }
 
@@ -67,7 +101,8 @@ class PythonExecutor(
                     scriptFile.absolutePath,
                     workspaceDir.absolutePath,
                     userSitePackagesDir.absolutePath,
-                    bridgeHost
+                    bridgeHost,
+                    hardwareBridge
                 )
                 val resultMap = resultObj.asMap()
                 val pyExit = resultMap[py.builtins.callAttr("str", "exit_code")]
@@ -87,10 +122,127 @@ class PythonExecutor(
     }
 
     /**
-     * Stops the currently running script:
-     * 1. Unblocks any waiting `input()` call in the terminal queue.
-     * 2. Calls CPython's `PyThreadState_SetAsyncExc` via `pydroid_runner.interrupt_running_code()`
-     *    to inject a `KeyboardInterrupt` into CPU-bound loops.
+     * Evaluates a single line in the persistent interactive Python REPL (`code.InteractiveConsole`).
+     */
+    fun evalReplLine(
+        scope: CoroutineScope,
+        line: String,
+        isContinuation: Boolean,
+        onResult: (moreInputNeeded: Boolean) -> Unit
+    ) {
+        val promptPrefix = if (isContinuation) "... " else ">>> "
+        terminal.writeStdout("$promptPrefix$line\n")
+
+        scope.launch(Dispatchers.IO) {
+            val bridgeHost = PythonBridgeHost(terminal)
+            val moreNeeded = runCatching {
+                val py = Python.getInstance()
+                val runnerModule = py.getModule("pydroid_runner")
+                runnerModule.callAttr(
+                    "eval_repl_line",
+                    line,
+                    workspaceDir.absolutePath,
+                    userSitePackagesDir.absolutePath,
+                    bridgeHost,
+                    hardwareBridge
+                ).toBoolean()
+            }.getOrElse { e ->
+                terminal.writeStderr("${e.localizedMessage}\n")
+                false
+            }
+            withContext(Dispatchers.Main) {
+                onResult(moreNeeded)
+            }
+        }
+    }
+
+    fun resetReplSession(scope: CoroutineScope) {
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val py = Python.getInstance()
+                py.getModule("pydroid_runner").callAttr("reset_repl_session")
+            }
+            terminal.clearScreen()
+            terminal.writeSystemMessage("Python 3 Interactive REPL 已重置 (直接输入表达式即可求值)", isError = false)
+        }
+    }
+
+    /**
+     * Performs fast background AST syntax checking and extracts `class` / `def` outline symbols.
+     */
+    suspend fun analyzeCodeAst(code: String, fileName: String): AstAnalysisResult = withContext(Dispatchers.IO) {
+        runCatching {
+            val py = Python.getInstance()
+            val runnerModule = py.getModule("pydroid_runner")
+            val jsonStr = runnerModule.callAttr("analyze_code_ast", code, fileName).toString()
+            val root = JSONObject(jsonStr)
+
+            val diagArr = root.optJSONArray("diagnostics") ?: JSONArray()
+            val diagnostics = ArrayList<AstSyntaxDiagnostic>(diagArr.length())
+            for (i in 0 until diagArr.length()) {
+                val d = diagArr.getJSONObject(i)
+                diagnostics.add(
+                    AstSyntaxDiagnostic(
+                        line = d.optInt("line", 1),
+                        column = d.optInt("col", 1),
+                        endColumn = d.optInt("end_col", 2),
+                        message = d.optString("message", "SyntaxError")
+                    )
+                )
+            }
+
+            val outArr = root.optJSONArray("outline") ?: JSONArray()
+            val outline = ArrayList<AstOutlineSymbol>(outArr.length())
+            for (i in 0 until outArr.length()) {
+                val o = outArr.getJSONObject(i)
+                outline.add(
+                    AstOutlineSymbol(
+                        name = o.optString("name", ""),
+                        kind = o.optString("kind", "function"),
+                        line = o.optInt("line", 1),
+                        column = o.optInt("col", 1)
+                    )
+                )
+            }
+
+            AstAnalysisResult(diagnostics = diagnostics, outline = outline)
+        }.getOrElse { AstAnalysisResult() }
+    }
+
+    /**
+     * Queries TinaIDE-style runtime context diagnostics (Python version, ABI, cwd, sys.path).
+     */
+    suspend fun getRuntimeDiagnostics(invalidateCache: Boolean = false): RuntimeContextInfo = withContext(Dispatchers.IO) {
+        runCatching {
+            val py = Python.getInstance()
+            val runnerModule = py.getModule("pydroid_runner")
+            val jsonStr = runnerModule.callAttr(
+                "get_runtime_diagnostics",
+                workspaceDir.absolutePath,
+                userSitePackagesDir.absolutePath,
+                invalidateCache
+            ).toString()
+            val obj = JSONObject(jsonStr)
+            val pathArr = obj.optJSONArray("sys_path") ?: JSONArray()
+            val paths = ArrayList<String>(pathArr.length())
+            for (i in 0 until pathArr.length()) {
+                paths.add(pathArr.optString(i))
+            }
+            RuntimeContextInfo(
+                pythonVersion = obj.optString("python_version", "3.10"),
+                fullVersion = obj.optString("full_version", ""),
+                platform = obj.optString("platform", ""),
+                cwd = obj.optString("cwd", ""),
+                workspaceDir = obj.optString("workspace_dir", ""),
+                userSitePackages = obj.optString("user_site_packages", ""),
+                sysPath = paths,
+                loadedModulesCount = obj.optInt("loaded_modules_count", 0)
+            )
+        }.getOrElse { RuntimeContextInfo() }
+    }
+
+    /**
+     * Stops the currently running script via both queue interrupt and CPython async exception injection.
      */
     fun stopRunningScript() {
         if (!isExecuting.get()) return
@@ -107,10 +259,6 @@ class PythonExecutor(
         }.start()
     }
 
-    /**
-     * Lists all installed Python packages (both user-installed in `filesDir/python/site-packages`
-     * and built-in Chaquopy packages).
-     */
     fun listInstalledPackages(): List<InstalledPackage> {
         return runCatching {
             val py = Python.getInstance()
@@ -138,9 +286,6 @@ class PythonExecutor(
         }.getOrElse { emptyList() }
     }
 
-    /**
-     * Installs or upgrades a package into the app's writable `userSitePackagesDir`.
-     */
     fun installOrUpgradePackage(
         packageSpec: String,
         upgrade: Boolean,
@@ -169,9 +314,6 @@ class PythonExecutor(
         }
     }
 
-    /**
-     * Uninstalls a user-installed package from `userSitePackagesDir`.
-     */
     fun uninstallPackage(
         packageName: String,
         onLog: (String) -> Unit

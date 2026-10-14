@@ -46,15 +46,7 @@ PyDroidLab/
         └── test/                      # 单元测试（验证 12 个内置示例与终端 input() 阻塞唤醒机制）
 ```
 
-## 3. 构建步骤（支持本地构建与 GitHub Actions 免配环境云编译）
-
-### 方式 A：免安装 Android Studio — 使用 GitHub Actions 云端一键生成 APK
-工程已内置 `.github/workflows/build-apk.yml` 自动编译流水线，无需在本地电脑安装 Android SDK：
-1. 在 GitHub 新建一个仓库（公开或私有均可），将解压后的 `PyDroidLab` 目录文件上传/推送上去。
-2. 点击仓库顶部的 **Actions** 标签页，进入 **Build PyDroidLab APK** 工作流（也可手动点击 **Run workflow**）。
-3. 等待约 3~5 分钟编译完成后，在页面底部的 **Artifacts** 区域直接点击下载 **`PyDroidLab-v1.0-debug-apk`**，解压即可获得可安装在手机上的 `app-debug.apk`。
-
-### 方式 B：使用本地电脑 Android Studio 或命令行构建
+## 3. 构建步骤
 
 1. **解压并配置 SDK 路径**：解压工程后，使用 Android Studio 直接打开 `PyDroidLab` 目录（Android Studio 会自动生成 `local.properties`），或在根目录手动创建 `local.properties`：
    ```properties

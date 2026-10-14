@@ -39,6 +39,7 @@ import com.pydroidlab.app.ui.MainViewModel
 import com.pydroidlab.app.ui.NavTab
 import com.pydroidlab.app.ui.screens.CodeEditorScreen
 import com.pydroidlab.app.ui.screens.FileManagerScreen
+import com.pydroidlab.app.ui.screens.FilePreviewDialog
 import com.pydroidlab.app.ui.screens.PipManagerScreen
 import com.pydroidlab.app.ui.screens.SamplesScreen
 import com.pydroidlab.app.ui.screens.SettingsScreen
@@ -70,6 +71,9 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val terminalSnapshot by viewModel.terminalSnapshot.collectAsStateWithLifecycle()
     val isTerminalExpanded by viewModel.isTerminalExpanded.collectAsStateWithLifecycle()
+    val isReplMode by viewModel.isReplMode.collectAsStateWithLifecycle()
+    val replContinuation by viewModel.replContinuation.collectAsStateWithLifecycle()
+    val previewFile by viewModel.previewFile.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -137,6 +141,8 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                             editorState = editorState,
                             settings = settings,
                             isRunning = terminalSnapshot.isRunning,
+                            onSelectTab = viewModel::selectEditorTab,
+                            onCloseTab = viewModel::closeEditorTab,
                             onTextChanged = viewModel::onEditorTextChanged,
                             onCursorChanged = viewModel::onEditorCursorChanged,
                             onRunClicked = viewModel::runCurrentScript,
@@ -148,7 +154,9 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                             onUpdateFindReplace = viewModel::updateFindReplaceState,
                             onToggleTerminal = {
                                 viewModel.setTerminalExpanded(!isTerminalExpanded)
-                            }
+                            },
+                            onRefreshRuntimeDiagnostics = viewModel::refreshRuntimeDiagnostics,
+                            onConsumeJumpToLine = viewModel::consumeJumpToLine
                         )
                     }
 
@@ -200,7 +208,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                 }
             }
 
-            // Interactive Terminal Emulator Dock (Visible when expanded on Editor tab or while running)
+            // Interactive Terminal Emulator & REPL Dock
             AnimatedVisibility(
                 visible = isTerminalExpanded && selectedTab == NavTab.EDITOR,
                 enter = expandVertically(),
@@ -209,14 +217,27 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
                 TerminalConsoleSheet(
                     snapshot = terminalSnapshot,
                     fontSizeSp = settings.terminalFontSizeSp,
+                    isReplMode = isReplMode,
+                    replContinuation = replContinuation,
+                    onToggleReplMode = viewModel::setReplMode,
+                    onResetRepl = viewModel::resetReplSession,
                     onSubmitInput = viewModel::submitTerminalInput,
+                    onJumpToLine = viewModel::requestJumpToLine,
                     onStopScript = viewModel::stopRunningScript,
                     onRerunScript = viewModel::runCurrentScript,
                     onClearTerminal = viewModel::clearTerminal,
                     onCloseSheet = { viewModel.setTerminalExpanded(false) },
-                    modifier = Modifier.height(270.dp)
+                    modifier = Modifier.height(275.dp)
                 )
             }
         }
+    }
+
+    // Built-in Zoomable Image / Plot / JSON / Markdown Previewer Dialog
+    previewFile?.let { file ->
+        FilePreviewDialog(
+            file = file,
+            onDismiss = viewModel::dismissPreviewFile
+        )
     }
 }

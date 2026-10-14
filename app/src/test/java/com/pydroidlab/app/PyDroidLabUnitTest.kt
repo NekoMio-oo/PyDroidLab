@@ -10,10 +10,11 @@ import kotlin.concurrent.thread
 class PyDroidLabUnitTest {
 
     @Test
-    fun verifyTwelveBuiltInSamplesExist() {
-        assertEquals(12, SampleRepository.samples.size)
+    fun verifyFourteenBuiltInSamplesExist() {
+        assertEquals(14, SampleRepository.samples.size)
         assertTrue(SampleRepository.samples.any { it.usesInput })
         assertTrue(SampleRepository.samples.any { it.code.contains("import requests") })
+        assertTrue(SampleRepository.samples.any { it.code.contains("import android_app") })
     }
 
     @Test

@@ -10,11 +10,17 @@ import com.pydroidlab.app.data.SampleRepository
 import com.pydroidlab.app.data.SettingsRepository
 import com.pydroidlab.app.data.ThemeMode
 import com.pydroidlab.app.data.WorkspaceFileItem
+import com.pydroidlab.app.runtime.AndroidHardwareBridge
+import com.pydroidlab.app.runtime.AstOutlineSymbol
+import com.pydroidlab.app.runtime.AstSyntaxDiagnostic
 import com.pydroidlab.app.runtime.InstalledPackage
 import com.pydroidlab.app.runtime.PythonExecutor
+import com.pydroidlab.app.runtime.RuntimeContextInfo
 import com.pydroidlab.terminal.TerminalEmulator
 import com.pydroidlab.terminal.TerminalSnapshot
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,11 +38,26 @@ enum class NavTab(val label: String) {
     SETTINGS("设置")
 }
 
+/**
+ * Represents a single open tab in the TinaIDE-inspired Multi-Tab bar.
+ */
+data class EditorTabItem(
+    val id: String,
+    val file: File,
+    val title: String,
+    val codeContent: String,
+    val isModified: Boolean = false,
+    val cursorLine: Int = 0,
+    val cursorColumn: Int = 0
+)
+
 data class EditorUiState(
+    val openTabs: List<EditorTabItem> = emptyList(),
+    val activeTabId: String = "",
     val activeFile: File? = null,
     val fileName: String = "main.py",
     val codeContent: String = "",
-    val contentVersion: Long = 0L, // Incremented only on external file load / sample load
+    val contentVersion: Long = 0L,
     val isModified: Boolean = false,
     val cursorLine: Int = 0,
     val cursorColumn: Int = 0,
@@ -47,6 +68,10 @@ data class EditorUiState(
     val replaceText: String = "",
     val caseSensitiveSearch: Boolean = false,
     val regexSearch: Boolean = false,
+    val syntaxDiagnostics: List<AstSyntaxDiagnostic> = emptyList(),
+    val outlineSymbols: List<AstOutlineSymbol> = emptyList(),
+    val runtimeContextInfo: RuntimeContextInfo = RuntimeContextInfo(),
+    val jumpToLineRequest: Pair<Int, Long>? = null,
     val statusBanner: String? = null
 )
 
@@ -66,20 +91,28 @@ data class PipManagerUiState(
     val lastResultBanner: String? = null
 )
 
-/**
- * Survives screen rotation (portrait <-> landscape) so editor buffer, cursor position,
- * running Python script, and interactive terminal session are never lost.
- */
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val settingsRepository = SettingsRepository(application)
     val fileRepository = FileRepository(application)
     val terminalEmulator = TerminalEmulator()
+
+    private val _previewFile = MutableStateFlow<File?>(null)
+    val previewFile: StateFlow<File?> = _previewFile.asStateFlow()
+
+    val hardwareBridge = AndroidHardwareBridge(
+        context = application.applicationContext,
+        onShowImageOnUi = { imgFile ->
+            _previewFile.value = imgFile
+        }
+    )
+
     val pythonExecutor = PythonExecutor(
         terminal = terminalEmulator,
         workspaceDir = fileRepository.workspaceRoot,
         userSitePackagesDir = fileRepository.userSitePackagesDir,
-        pipCacheDir = fileRepository.pipCacheDir
+        pipCacheDir = fileRepository.pipCacheDir,
+        hardwareBridge = hardwareBridge
     )
 
     val settings: StateFlow<AppSettings> = settingsRepository.settingsFlow.stateIn(
@@ -96,6 +129,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTerminalExpanded = MutableStateFlow(false)
     val isTerminalExpanded: StateFlow<Boolean> = _isTerminalExpanded.asStateFlow()
 
+    private val _isReplMode = MutableStateFlow(false)
+    val isReplMode: StateFlow<Boolean> = _isReplMode.asStateFlow()
+
+    private val _replContinuation = MutableStateFlow(false)
+    val replContinuation: StateFlow<Boolean> = _replContinuation.asStateFlow()
+
     private val _editorState = MutableStateFlow(EditorUiState())
     val editorState: StateFlow<EditorUiState> = _editorState.asStateFlow()
 
@@ -109,12 +148,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val samples: List<CodeSample> = SampleRepository.samples
 
+    private var astAnalysisJob: Job? = null
+
     init {
         viewModelScope.launch {
             val defaultFile = fileRepository.ensureInitialWorkspace()
             openFileInEditor(defaultFile)
             refreshFileBrowser(fileRepository.workspaceRoot)
             refreshInstalledPackages()
+            refreshRuntimeDiagnostics(invalidateCache = false)
         }
     }
 
@@ -131,7 +173,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isTerminalExpanded.value = expanded
     }
 
-    // --- Editor Actions ---
+    fun setReplMode(enabled: Boolean) {
+        _isReplMode.value = enabled
+        if (enabled && terminalSnapshot.value.lines.isEmpty()) {
+            terminalEmulator.writeSystemMessage(
+                "Python 3 Interactive REPL 模式 (输入表达式回车即求值，如 2 ** 10 或 import this)",
+                isError = false
+            )
+        }
+    }
+
+    fun resetReplSession() {
+        _replContinuation.value = false
+        pythonExecutor.resetReplSession(viewModelScope)
+    }
+
+    fun dismissPreviewFile() {
+        _previewFile.value = null
+    }
+
+    // --- Multi-Tab & Editor Actions ---
+
+    fun selectEditorTab(tabId: String) {
+        val current = _editorState.value
+        if (tabId == current.activeTabId) return
+        val target = current.openTabs.find { it.id == tabId } ?: return
+        _editorState.value = current.copy(
+            activeTabId = target.id,
+            activeFile = target.file,
+            fileName = target.title,
+            codeContent = target.codeContent,
+            contentVersion = current.contentVersion + 1L,
+            isModified = target.isModified,
+            cursorLine = target.cursorLine,
+            cursorColumn = target.cursorColumn
+        )
+        scheduleAstAnalysis(target.codeContent, target.title)
+    }
+
+    fun closeEditorTab(tabId: String) {
+        val current = _editorState.value
+        if (current.openTabs.size <= 1) return
+        val idx = current.openTabs.indexOfFirst { it.id == tabId }
+        if (idx == -1) return
+        val remaining = current.openTabs.toMutableList().apply { removeAt(idx) }
+        val nextActive = if (current.activeTabId == tabId) {
+            remaining[idx.coerceAtMost(remaining.size - 1)]
+        } else {
+            remaining.find { it.id == current.activeTabId } ?: remaining.first()
+        }
+        _editorState.value = current.copy(
+            openTabs = remaining,
+            activeTabId = nextActive.id,
+            activeFile = nextActive.file,
+            fileName = nextActive.title,
+            codeContent = nextActive.codeContent,
+            contentVersion = current.contentVersion + 1L,
+            isModified = nextActive.isModified,
+            cursorLine = nextActive.cursorLine,
+            cursorColumn = nextActive.cursorColumn
+        )
+        scheduleAstAnalysis(nextActive.codeContent, nextActive.title)
+    }
 
     fun onEditorTextChanged(
         newText: String,
@@ -142,14 +245,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val current = _editorState.value
         val changed = newText != current.codeContent
+        val newModified = if (changed) true else current.isModified
+        val updatedTabs = current.openTabs.map { tab ->
+            if (tab.id == current.activeTabId) {
+                tab.copy(
+                    codeContent = newText,
+                    isModified = newModified,
+                    cursorLine = cursorLine,
+                    cursorColumn = cursorColumn
+                )
+            } else {
+                tab
+            }
+        }
         _editorState.value = current.copy(
+            openTabs = updatedTabs,
             codeContent = newText,
-            isModified = if (changed) true else current.isModified,
+            isModified = newModified,
             cursorLine = cursorLine,
             cursorColumn = cursorColumn,
             canUndo = canUndo,
             canRedo = canRedo
         )
+        if (changed) {
+            scheduleAstAnalysis(newText, current.fileName)
+        }
     }
 
     fun onEditorCursorChanged(
@@ -158,12 +278,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         canUndo: Boolean,
         canRedo: Boolean
     ) {
-        _editorState.value = _editorState.value.copy(
+        val current = _editorState.value
+        val updatedTabs = current.openTabs.map { tab ->
+            if (tab.id == current.activeTabId) {
+                tab.copy(cursorLine = cursorLine, cursorColumn = cursorColumn)
+            } else {
+                tab
+            }
+        }
+        _editorState.value = current.copy(
+            openTabs = updatedTabs,
             cursorLine = cursorLine,
             cursorColumn = cursorColumn,
             canUndo = canUndo,
             canRedo = canRedo
         )
+    }
+
+    private fun scheduleAstAnalysis(code: String, fileName: String) {
+        astAnalysisJob?.cancel()
+        astAnalysisJob = viewModelScope.launch {
+            delay(320L)
+            val analysis = pythonExecutor.analyzeCodeAst(code, fileName)
+            _editorState.value = _editorState.value.copy(
+                syntaxDiagnostics = analysis.diagnostics,
+                outlineSymbols = analysis.outline
+            )
+        }
+    }
+
+    fun refreshRuntimeDiagnostics(invalidateCache: Boolean = false) {
+        viewModelScope.launch {
+            val info = pythonExecutor.getRuntimeDiagnostics(invalidateCache = invalidateCache)
+            _editorState.value = _editorState.value.copy(
+                runtimeContextInfo = info,
+                statusBanner = if (invalidateCache) "已清理并重载 Python 模块缓存 (importlib.invalidate_caches)" else _editorState.value.statusBanner
+            )
+        }
+    }
+
+    fun requestJumpToLine(oneBasedLine: Int) {
+        val targetZeroBased = (oneBasedLine - 1).coerceAtLeast(0)
+        _selectedTab.value = NavTab.EDITOR
+        _editorState.value = _editorState.value.copy(
+            jumpToLineRequest = targetZeroBased to System.currentTimeMillis()
+        )
+    }
+
+    fun consumeJumpToLine() {
+        _editorState.value = _editorState.value.copy(jumpToLineRequest = null)
     }
 
     fun toggleFindReplaceBar() {
@@ -190,20 +353,47 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openFileInEditor(file: File) {
+        val ext = file.extension.lowercase()
+        // If it's an image file in File Manager, pop up the built-in Zoomable Image Previewer!
+        if (ext in setOf("png", "jpg", "jpeg", "webp", "bmp")) {
+            _previewFile.value = file
+            return
+        }
+
         viewModelScope.launch {
             fileRepository.readFile(file)
                 .onSuccess { content ->
-                    _editorState.value = _editorState.value.copy(
+                    val tabId = file.canonicalPath
+                    val current = _editorState.value
+                    val existingIdx = current.openTabs.indexOfFirst { it.id == tabId }
+                    val newTab = EditorTabItem(
+                        id = tabId,
+                        file = file,
+                        title = file.name,
+                        codeContent = content,
+                        isModified = false,
+                        cursorLine = 0,
+                        cursorColumn = 0
+                    )
+                    val updatedTabs = if (existingIdx >= 0) {
+                        current.openTabs.toMutableList().apply { set(existingIdx, newTab) }
+                    } else {
+                        current.openTabs + newTab
+                    }
+                    _editorState.value = current.copy(
+                        openTabs = updatedTabs,
+                        activeTabId = tabId,
                         activeFile = file,
                         fileName = file.name,
                         codeContent = content,
-                        contentVersion = _editorState.value.contentVersion + 1L,
+                        contentVersion = current.contentVersion + 1L,
                         isModified = false,
                         cursorLine = 0,
                         cursorColumn = 0,
                         statusBanner = "已打开 ${file.name}"
                     )
                     _selectedTab.value = NavTab.EDITOR
+                    scheduleAstAnalysis(content, file.name)
                 }
                 .onFailure { e ->
                     _editorState.value = _editorState.value.copy(
@@ -213,7 +403,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun createNewScriptInEditor(fileName: String, initialCode: String = "# -*- coding: utf-8 -*-\n\nprint(\"Hello from PyDroidLab!\")\n") {
+    fun createNewScriptInEditor(
+        fileName: String,
+        initialCode: String = "# -*- coding: utf-8 -*-\n\nprint(\"Hello from PyDroidLab!\")\n"
+    ) {
         viewModelScope.launch {
             val parent = _fileBrowserState.value.currentDir
             fileRepository.createNewFile(parent, fileName, initialCode)
@@ -235,7 +428,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val targetFile = state.activeFile ?: File(fileRepository.workspaceRoot, state.fileName)
             fileRepository.writeFile(targetFile, state.codeContent)
                 .onSuccess {
-                    _editorState.value = _editorState.value.copy(
+                    val updatedTabs = state.openTabs.map { tab ->
+                        if (tab.id == state.activeTabId) tab.copy(isModified = false) else tab
+                    }
+                    _editorState.value = state.copy(
+                        openTabs = updatedTabs,
                         activeFile = targetFile,
                         fileName = targetFile.name,
                         isModified = false,
@@ -259,12 +456,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val target = File(parent, clean)
             fileRepository.writeFile(target, _editorState.value.codeContent)
                 .onSuccess {
-                    _editorState.value = _editorState.value.copy(
-                        activeFile = target,
-                        fileName = target.name,
-                        isModified = false,
-                        statusBanner = "已另存为 ${target.name}"
-                    )
+                    openFileInEditor(target)
                     refreshFileBrowser(_fileBrowserState.value.currentDir)
                 }
                 .onFailure { e ->
@@ -275,7 +467,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- Run & Interactive Terminal Actions ---
+    // --- Run, Interactive Input & REPL Actions ---
 
     fun runCurrentScript() {
         val currentEditor = _editorState.value
@@ -285,13 +477,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (settings.value.autoSaveOnRun) {
             viewModelScope.launch {
                 fileRepository.writeFile(scriptFile, codeToRun)
+                val updatedTabs = currentEditor.openTabs.map { tab ->
+                    if (tab.id == currentEditor.activeTabId) tab.copy(isModified = false) else tab
+                }
                 _editorState.value = _editorState.value.copy(
+                    openTabs = updatedTabs,
                     activeFile = scriptFile,
                     isModified = false
                 )
             }
         }
 
+        _isReplMode.value = false
         _isTerminalExpanded.value = true
         pythonExecutor.runScript(
             scope = viewModelScope,
@@ -305,7 +502,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitTerminalInput(inputLine: String) {
-        terminalEmulator.submitUserInput(inputLine)
+        if (_isReplMode.value && !terminalSnapshot.value.isRunning) {
+            pythonExecutor.evalReplLine(
+                scope = viewModelScope,
+                line = inputLine,
+                isContinuation = _replContinuation.value,
+                onResult = { moreNeeded ->
+                    _replContinuation.value = moreNeeded
+                }
+            )
+        } else {
+            terminalEmulator.submitUserInput(inputLine)
+        }
     }
 
     fun clearTerminal() {
@@ -319,18 +527,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val examplesDir = File(fileRepository.workspaceRoot, "examples").apply { mkdirs() }
             val sampleFile = File(examplesDir, sample.fileName)
             fileRepository.writeFile(sampleFile, sample.code)
-            _editorState.value = _editorState.value.copy(
+            val tabId = sampleFile.canonicalPath
+            val current = _editorState.value
+            val newTab = EditorTabItem(
+                id = tabId,
+                file = sampleFile,
+                title = sampleFile.name,
+                codeContent = sample.code,
+                isModified = false
+            )
+            val existingIdx = current.openTabs.indexOfFirst { it.id == tabId }
+            val updatedTabs = if (existingIdx >= 0) {
+                current.openTabs.toMutableList().apply { set(existingIdx, newTab) }
+            } else {
+                current.openTabs + newTab
+            }
+
+            _editorState.value = current.copy(
+                openTabs = updatedTabs,
+                activeTabId = tabId,
                 activeFile = sampleFile,
                 fileName = sampleFile.name,
                 codeContent = sample.code,
-                contentVersion = _editorState.value.contentVersion + 1L,
+                contentVersion = current.contentVersion + 1L,
                 isModified = false,
                 cursorLine = 0,
                 cursorColumn = 0,
                 statusBanner = "已加载示例：${sample.title}"
             )
             _selectedTab.value = NavTab.EDITOR
+            scheduleAstAnalysis(sample.code, sampleFile.name)
+
             if (runImmediately) {
+                _isReplMode.value = false
                 _isTerminalExpanded.value = true
                 pythonExecutor.runScript(
                     scope = viewModelScope,

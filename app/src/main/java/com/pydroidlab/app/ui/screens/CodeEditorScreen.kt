@@ -18,25 +18,34 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.SaveAs
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -44,14 +53,19 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,19 +84,28 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.pydroidlab.app.data.AppSettings
 import com.pydroidlab.app.data.ThemeMode
 import com.pydroidlab.app.editor.PythonSoraLanguage
+import com.pydroidlab.app.runtime.AstOutlineSymbol
+import com.pydroidlab.app.runtime.AstSyntaxDiagnostic
+import com.pydroidlab.app.runtime.RuntimeContextInfo
+import com.pydroidlab.app.ui.EditorTabItem
 import com.pydroidlab.app.ui.EditorUiState
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticRegion
+import io.github.rosemoe.sora.lang.diagnostic.DiagnosticsContainer
 import io.github.rosemoe.sora.widget.CodeEditor
 import io.github.rosemoe.sora.widget.EditorSearcher
 import io.github.rosemoe.sora.widget.schemes.SchemeDarcula
 import io.github.rosemoe.sora.widget.schemes.SchemeEclipse
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CodeEditorScreen(
     editorState: EditorUiState,
     settings: AppSettings,
     isRunning: Boolean,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit,
     onTextChanged: (String, Int, Int, Boolean, Boolean) -> Unit,
     onCursorChanged: (Int, Int, Boolean, Boolean) -> Unit,
     onRunClicked: () -> Unit,
@@ -91,7 +115,9 @@ fun CodeEditorScreen(
     onNewFileClicked: (String) -> Unit,
     onToggleFindReplace: () -> Unit,
     onUpdateFindReplace: (String, String, Boolean, Boolean) -> Unit,
-    onToggleTerminal: () -> Unit
+    onToggleTerminal: () -> Unit,
+    onRefreshRuntimeDiagnostics: (Boolean) -> Unit,
+    onConsumeJumpToLine: () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
     val useDarkEditor = when (settings.themeMode) {
@@ -105,8 +131,9 @@ fun CodeEditorScreen(
     var showNewFileDialog by remember { mutableStateOf(false) }
     var showSaveAsDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
+    var showOutlineAndContextSheet by remember { mutableStateOf(false) }
 
-    // Synchronize external file loads or sample loads into the Sora CodeEditor instance
+    // Synchronize external file loads, tab switches, or sample loads into the Sora CodeEditor instance
     LaunchedEffect(editorState.contentVersion, editorRef) {
         val editor = editorRef ?: return@LaunchedEffect
         if (lastLoadedVersion != editorState.contentVersion) {
@@ -114,6 +141,46 @@ fun CodeEditorScreen(
             if (editor.text.toString() != editorState.codeContent) {
                 editor.setText(editorState.codeContent)
             }
+            val safeLine = editorState.cursorLine.coerceIn(0, (editor.text.lineCount - 1).coerceAtLeast(0))
+            val safeCol = editorState.cursorColumn.coerceIn(0, editor.text.getColumnCount(safeLine))
+            runCatching { editor.setSelection(safeLine, safeCol) }
+        }
+    }
+
+    // Handle Jump-To-Line requests from Terminal Traceback clicks or Code Outline selection
+    LaunchedEffect(editorState.jumpToLineRequest, editorRef) {
+        val req = editorState.jumpToLineRequest ?: return@LaunchedEffect
+        val editor = editorRef ?: return@LaunchedEffect
+        val targetLine = req.first.coerceIn(0, (editor.text.lineCount - 1).coerceAtLeast(0))
+        runCatching {
+            editor.setSelection(targetLine, 0)
+            editor.ensureSelectionVisible()
+            editor.requestFocus()
+        }
+        onConsumeJumpToLine()
+    }
+
+    // Push real-time `ast.parse` syntax diagnostics into Sora Editor's DiagnosticsContainer (draws red wave underline!)
+    LaunchedEffect(editorState.syntaxDiagnostics, editorRef) {
+        val editor = editorRef ?: return@LaunchedEffect
+        runCatching {
+            val container = DiagnosticsContainer()
+            for (diag in editorState.syntaxDiagnostics) {
+                val lineIdx = (diag.line - 1).coerceIn(0, (editor.text.lineCount - 1).coerceAtLeast(0))
+                val lineLen = editor.text.getColumnCount(lineIdx)
+                val startCol = (diag.column - 1).coerceIn(0, lineLen)
+                val endCol = diag.endColumn.coerceIn((startCol + 1).coerceAtMost(lineLen), lineLen)
+                val startIndex = editor.text.getCharIndex(lineIdx, startCol)
+                val endIndex = editor.text.getCharIndex(lineIdx, endCol).coerceAtLeast(startIndex + 1)
+                container.addDiagnostic(
+                    DiagnosticRegion(
+                        startIndex,
+                        endIndex,
+                        DiagnosticRegion.SEVERITY_ERROR
+                    )
+                )
+            }
+            editor.diagnostics = container
         }
     }
 
@@ -155,10 +222,14 @@ fun CodeEditorScreen(
                     .padding(start = 12.dp, end = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: File name + compact cursor position (strictly single-line, never wraps vertically)
+                // Left: Active file title + clickable TinaIDE-style runtime status pill
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .clickable {
+                            onRefreshRuntimeDiagnostics(false)
+                            showOutlineAndContextSheet = true
+                        }
                         .padding(end = 4.dp),
                     verticalArrangement = Arrangement.Center
                 ) {
@@ -172,17 +243,17 @@ fun CodeEditorScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "Ln ${editorState.cursorLine + 1}:${editorState.cursorColumn + 1} • Tab ${settings.tabWidth}",
+                        text = "Ln ${editorState.cursorLine + 1}:${editorState.cursorColumn + 1} • Py ${editorState.runtimeContextInfo.pythonVersion} • 大纲(${editorState.outlineSymbols.size})",
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Clip
                     )
                 }
 
-                // Right: Compact 34.dp action buttons so the filename always has ample horizontal width
+                // Right: Compact 34.dp action buttons
                 CompactToolbarIconButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "撤销",
@@ -195,6 +266,15 @@ fun CodeEditorScreen(
                     contentDescription = "重做",
                     enabled = editorState.canRedo,
                     onClick = { editorRef?.redo() }
+                )
+
+                CompactToolbarIconButton(
+                    icon = Icons.AutoMirrored.Filled.FormatListBulleted,
+                    contentDescription = "代码大纲与运行上下文诊断",
+                    onClick = {
+                        onRefreshRuntimeDiagnostics(false)
+                        showOutlineAndContextSheet = true
+                    }
                 )
 
                 CompactToolbarIconButton(
@@ -247,7 +327,6 @@ fun CodeEditorScreen(
                     }
                 }
 
-                // Overflow menu for New File / Save As
                 Box {
                     CompactToolbarIconButton(
                         icon = Icons.Default.MoreVert,
@@ -274,12 +353,68 @@ fun CodeEditorScreen(
                                 showSaveAsDialog = true
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text("代码大纲与环境诊断") },
+                            leadingIcon = { Icon(Icons.Default.BugReport, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onRefreshRuntimeDiagnostics(false)
+                                showOutlineAndContextSheet = true
+                            }
+                        )
                     }
                 }
             }
         }
 
-        // 2. Collapsible Find & Replace Toolbar
+        // 2. TinaIDE-inspired Multi-Tab Bar (32.dp slim horizontal tab strip)
+        if (editorState.openTabs.size > 1) {
+            MultiTabStrip(
+                tabs = editorState.openTabs,
+                activeTabId = editorState.activeTabId,
+                onSelectTab = onSelectTab,
+                onCloseTab = onCloseTab
+            )
+        }
+
+        // 3. Real-time AST Syntax Error Pill (if `ast.parse` detected a SyntaxError/IndentationError)
+        val firstDiag = editorState.syntaxDiagnostics.firstOrNull()
+        AnimatedVisibility(visible = firstDiag != null) {
+            if (firstDiag != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background( Color(0xFF7F1D1D) )
+                        .clickable {
+                            val targetLine = (firstDiag.line - 1).coerceAtLeast(0)
+                            runCatching {
+                                editorRef?.setSelection(targetLine, (firstDiag.column - 1).coerceAtLeast(0))
+                                editorRef?.ensureSelectionVisible()
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFCA5A5),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Ln ${firstDiag.line}: ${firstDiag.message} (点击定位)",
+                        color = Color(0xFFFECACA),
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+
+        // 4. Collapsible Find & Replace Toolbar
         AnimatedVisibility(visible = editorState.showFindReplaceBar) {
             FindReplaceToolbar(
                 findQuery = editorState.findQuery,
@@ -320,7 +455,7 @@ fun CodeEditorScreen(
 
         HorizontalDivider()
 
-        // 3. Rosemoe Sora CodeEditor View (Occupies maximum screen height)
+        // 5. Rosemoe Sora CodeEditor View
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -392,7 +527,7 @@ fun CodeEditorScreen(
             )
         }
 
-        // 4. Slim 36.dp Quick Symbol Input Bar
+        // 6. Slim 38.dp Quick Symbol Input Bar
         QuickSymbolBar(
             tabWidth = settings.tabWidth,
             onInsertSymbol = { sym, cursorOffset ->
@@ -406,6 +541,29 @@ fun CodeEditorScreen(
     DisposableEffect(Unit) {
         onDispose {
             editorRef = null
+        }
+    }
+
+    if (showOutlineAndContextSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showOutlineAndContextSheet = false }
+        ) {
+            OutlineAndContextSheetContent(
+                outlineSymbols = editorState.outlineSymbols,
+                syntaxDiagnostics = editorState.syntaxDiagnostics,
+                runtimeInfo = editorState.runtimeContextInfo,
+                onJumpToLine = { line ->
+                    showOutlineAndContextSheet = false
+                    val zeroBased = (line - 1).coerceAtLeast(0)
+                    runCatching {
+                        editorRef?.setSelection(zeroBased, 0)
+                        editorRef?.ensureSelectionVisible()
+                    }
+                },
+                onInvalidateImportCache = {
+                    onRefreshRuntimeDiagnostics(true)
+                }
+            )
         }
     }
 
@@ -433,6 +591,245 @@ fun CodeEditorScreen(
                 onSaveAsClicked(name)
             }
         )
+    }
+}
+
+@Composable
+private fun MultiTabStrip(
+    tabs: List<EditorTabItem>,
+    activeTabId: String,
+    onSelectTab: (String) -> Unit,
+    onCloseTab: (String) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(32.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            tabs.forEach { tab ->
+                val isSelected = tab.id == activeTabId
+                Surface(
+                    shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                    tonalElevation = if (isSelected) 2.dp else 0.dp,
+                    modifier = Modifier
+                        .height(28.dp)
+                        .clickable { onSelectTab(tab.id) }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 10.dp, end = 4.dp)
+                    ) {
+                        Text(
+                            text = tab.title + if (tab.isModified) " •" else "",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "关闭标签",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(14.dp)
+                                .clickable { onCloseTab(tab.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OutlineAndContextSheetContent(
+    outlineSymbols: List<AstOutlineSymbol>,
+    syntaxDiagnostics: List<AstSyntaxDiagnostic>,
+    runtimeInfo: RuntimeContextInfo,
+    onJumpToLine: (Int) -> Unit,
+    onInvalidateImportCache: () -> Unit
+) {
+    var selectedSection by remember { mutableIntStateOf(0) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(420.dp)
+            .padding(horizontal = 16.dp)
+    ) {
+        TabRow(selectedTabIndex = selectedSection) {
+            Tab(
+                selected = selectedSection == 0,
+                onClick = { selectedSection = 0 },
+                text = { Text("代码大纲 (${outlineSymbols.size})") }
+            )
+            Tab(
+                selected = selectedSection == 1,
+                onClick = { selectedSection = 1 },
+                text = { Text("Python 运行上下文诊断") }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (selectedSection == 0) {
+            if (syntaxDiagnostics.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF7F1D1D)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                        .clickable { onJumpToLine(syntaxDiagnostics.first().line) }
+                ) {
+                    Text(
+                        text = "⚠️ 语法错误 (第 ${syntaxDiagnostics.first().line} 行): ${syntaxDiagnostics.first().message}",
+                        color = Color(0xFFFECACA),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+
+            if (outlineSymbols.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "当前脚本未定义 class 或 def 函数",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(outlineSymbols) { sym ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onJumpToLine(sym.line) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    color = if (sym.kind == "class") MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (sym.kind == "class") "C" else "ƒ",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = sym.name,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "Ln ${sym.line}",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Section 1: TinaIDE-style Runtime Context Diagnostics
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "CPython ${runtimeInfo.pythonVersion} (Chaquopy 15.0.1)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "${runtimeInfo.platform} • 已加载模块: ${runtimeInfo.loadedModulesCount}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(onClick = onInvalidateImportCache) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("重载缓存", fontSize = 12.sp)
+                        }
+                    }
+                }
+
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("当前工作目录 (cwd):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(runtimeInfo.cwd, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("私有 pip 库目录 (site-packages):", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(runtimeInfo.userSitePackages, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                item {
+                    Text(
+                        text = "sys.path 模块搜索优先级列表 (${runtimeInfo.sysPath.size}):",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(runtimeInfo.sysPath.mapIndexed { idx, p -> idx to p }) { (idx, pathStr) ->
+                    Text(
+                        text = "[$idx] $pathStr",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = if (idx < 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 
