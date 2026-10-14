@@ -76,6 +76,7 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
     val previewFile by viewModel.previewFile.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val showFullScreenTerminal = isTerminalExpanded && settings.terminalFullScreen
 
     LaunchedEffect(editorState.statusBanner) {
         val msg = editorState.statusBanner
@@ -91,144 +92,174 @@ fun PyDroidLabMainScaffold(viewModel: MainViewModel) {
             .imePadding(),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = selectedTab == NavTab.EDITOR,
-                    onClick = { viewModel.selectTab(NavTab.EDITOR) },
-                    icon = { Icon(Icons.Default.Code, contentDescription = null) },
-                    label = { Text(NavTab.EDITOR.label) }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == NavTab.FILES,
-                    onClick = { viewModel.selectTab(NavTab.FILES) },
-                    icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-                    label = { Text(NavTab.FILES.label) }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == NavTab.PIP,
-                    onClick = { viewModel.selectTab(NavTab.PIP) },
-                    icon = { Icon(Icons.Default.Extension, contentDescription = null) },
-                    label = { Text(NavTab.PIP.label) }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == NavTab.SAMPLES,
-                    onClick = { viewModel.selectTab(NavTab.SAMPLES) },
-                    icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
-                    label = { Text(NavTab.SAMPLES.label) }
-                )
-                NavigationBarItem(
-                    selected = selectedTab == NavTab.SETTINGS,
-                    onClick = { viewModel.selectTab(NavTab.SETTINGS) },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text(NavTab.SETTINGS.label) }
-                )
+            // Hide bottom navigation bar when in Full-Screen Terminal mode for an immersive Termux experience
+            if (!showFullScreenTerminal) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = selectedTab == NavTab.EDITOR,
+                        onClick = { viewModel.selectTab(NavTab.EDITOR) },
+                        icon = { Icon(Icons.Default.Code, contentDescription = null) },
+                        label = { Text(NavTab.EDITOR.label) }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == NavTab.FILES,
+                        onClick = { viewModel.selectTab(NavTab.FILES) },
+                        icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                        label = { Text(NavTab.FILES.label) }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == NavTab.PIP,
+                        onClick = { viewModel.selectTab(NavTab.PIP) },
+                        icon = { Icon(Icons.Default.Extension, contentDescription = null) },
+                        label = { Text(NavTab.PIP.label) }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == NavTab.SAMPLES,
+                        onClick = { viewModel.selectTab(NavTab.SAMPLES) },
+                        icon = { Icon(Icons.Default.MenuBook, contentDescription = null) },
+                        label = { Text(NavTab.SAMPLES.label) }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == NavTab.SETTINGS,
+                        onClick = { viewModel.selectTab(NavTab.SETTINGS) },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        label = { Text(NavTab.SETTINGS.label) }
+                    )
+                }
             }
         }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            Box(
+        if (showFullScreenTerminal) {
+            // Mode A (Default): Full-Screen Termux-style Terminal Page
+            TerminalConsoleSheet(
+                snapshot = terminalSnapshot,
+                fontSizeSp = settings.terminalFontSizeSp,
+                isFullScreen = true,
+                isReplMode = isReplMode,
+                replContinuation = replContinuation,
+                onToggleFullScreen = viewModel::setTerminalFullScreen,
+                onToggleReplMode = viewModel::setReplMode,
+                onResetRepl = viewModel::resetReplSession,
+                onSubmitInput = viewModel::submitTerminalInput,
+                onJumpToLine = viewModel::requestJumpToLine,
+                onStopScript = viewModel::stopRunningScript,
+                onRerunScript = viewModel::runCurrentScript,
+                onClearTerminal = viewModel::clearTerminal,
+                onCloseSheet = { viewModel.setTerminalExpanded(false) },
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            )
+        } else {
+            // Mode B: Standard Editor / Tabs + Optional Bottom Split-Screen Terminal Dock
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
             ) {
-                when (selectedTab) {
-                    NavTab.EDITOR -> {
-                        CodeEditorScreen(
-                            editorState = editorState,
-                            settings = settings,
-                            isRunning = terminalSnapshot.isRunning,
-                            onSelectTab = viewModel::selectEditorTab,
-                            onCloseTab = viewModel::closeEditorTab,
-                            onTextChanged = viewModel::onEditorTextChanged,
-                            onCursorChanged = viewModel::onEditorCursorChanged,
-                            onRunClicked = viewModel::runCurrentScript,
-                            onStopClicked = viewModel::stopRunningScript,
-                            onSaveClicked = { viewModel.saveCurrentFile() },
-                            onSaveAsClicked = viewModel::saveCurrentFileAs,
-                            onNewFileClicked = { name -> viewModel.createNewScriptInEditor(name) },
-                            onToggleFindReplace = viewModel::toggleFindReplaceBar,
-                            onUpdateFindReplace = viewModel::updateFindReplaceState,
-                            onToggleTerminal = {
-                                viewModel.setTerminalExpanded(!isTerminalExpanded)
-                            },
-                            onRefreshRuntimeDiagnostics = viewModel::refreshRuntimeDiagnostics,
-                            onConsumeJumpToLine = viewModel::consumeJumpToLine
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) {
+                    when (selectedTab) {
+                        NavTab.EDITOR -> {
+                            CodeEditorScreen(
+                                editorState = editorState,
+                                settings = settings,
+                                isRunning = terminalSnapshot.isRunning,
+                                onSelectTab = viewModel::selectEditorTab,
+                                onCloseTab = viewModel::closeEditorTab,
+                                onTextChanged = viewModel::onEditorTextChanged,
+                                onCursorChanged = viewModel::onEditorCursorChanged,
+                                onRunClicked = viewModel::runCurrentScript,
+                                onStopClicked = viewModel::stopRunningScript,
+                                onSaveClicked = { viewModel.saveCurrentFile() },
+                                onSaveAsClicked = viewModel::saveCurrentFileAs,
+                                onNewFileClicked = { name -> viewModel.createNewScriptInEditor(name) },
+                                onToggleFindReplace = viewModel::toggleFindReplaceBar,
+                                onUpdateFindReplace = viewModel::updateFindReplaceState,
+                                onToggleTerminal = {
+                                    viewModel.setTerminalExpanded(!isTerminalExpanded)
+                                },
+                                onRefreshRuntimeDiagnostics = viewModel::refreshRuntimeDiagnostics,
+                                onConsumeJumpToLine = viewModel::consumeJumpToLine
+                            )
+                        }
 
-                    NavTab.FILES -> {
-                        FileManagerScreen(
-                            browserState = fileBrowserState,
-                            workspaceRoot = viewModel.fileRepository.workspaceRoot,
-                            onOpenFile = viewModel::openFileInEditor,
-                            onNavigateDirectory = viewModel::refreshFileBrowser,
-                            onNavigateUp = { viewModel.navigateUpDirectory() },
-                            onCreateFile = viewModel::createFileInBrowser,
-                            onCreateFolder = viewModel::createFolderInBrowser,
-                            onRenameItem = viewModel::renameFileItem,
-                            onMoveItem = viewModel::moveFileItem,
-                            onDeleteItem = viewModel::deleteFileItem
-                        )
-                    }
+                        NavTab.FILES -> {
+                            FileManagerScreen(
+                                browserState = fileBrowserState,
+                                workspaceRoot = viewModel.fileRepository.workspaceRoot,
+                                onOpenFile = viewModel::openFileInEditor,
+                                onNavigateDirectory = viewModel::refreshFileBrowser,
+                                onNavigateUp = { viewModel.navigateUpDirectory() },
+                                onCreateFile = viewModel::createFileInBrowser,
+                                onCreateFolder = viewModel::createFolderInBrowser,
+                                onRenameItem = viewModel::renameFileItem,
+                                onMoveItem = viewModel::moveFileItem,
+                                onDeleteItem = viewModel::deleteFileItem
+                            )
+                        }
 
-                    NavTab.PIP -> {
-                        PipManagerScreen(
-                            pipState = pipState,
-                            userSitePackagesPath = viewModel.fileRepository.userSitePackagesDir.absolutePath,
-                            onInstallPackage = viewModel::installOrUpgradePackage,
-                            onUninstallPackage = viewModel::uninstallPackage,
-                            onRefreshList = viewModel::refreshInstalledPackages
-                        )
-                    }
+                        NavTab.PIP -> {
+                            PipManagerScreen(
+                                pipState = pipState,
+                                userSitePackagesPath = viewModel.fileRepository.userSitePackagesDir.absolutePath,
+                                onInstallPackage = viewModel::installOrUpgradePackage,
+                                onUninstallPackage = viewModel::uninstallPackage,
+                                onRefreshList = viewModel::refreshInstalledPackages
+                            )
+                        }
 
-                    NavTab.SAMPLES -> {
-                        SamplesScreen(
-                            samples = viewModel.samples,
-                            onOpenSample = viewModel::loadSample
-                        )
-                    }
+                        NavTab.SAMPLES -> {
+                            SamplesScreen(
+                                samples = viewModel.samples,
+                                onOpenSample = viewModel::loadSample
+                            )
+                        }
 
-                    NavTab.SETTINGS -> {
-                        SettingsScreen(
-                            settings = settings,
-                            onThemeModeChanged = viewModel::setThemeMode,
-                            onEditorFontSizeChanged = viewModel::setEditorFontSize,
-                            onTerminalFontSizeChanged = viewModel::setTerminalFontSize,
-                            onTabWidthChanged = viewModel::setTabWidth,
-                            onWordWrapChanged = viewModel::setWordWrap,
-                            onShowLineNumbersChanged = viewModel::setShowLineNumbers,
-                            onAutoSaveOnRunChanged = viewModel::setAutoSaveOnRun,
-                            onCustomPipIndexChanged = viewModel::setCustomPipIndexUrl
-                        )
+                        NavTab.SETTINGS -> {
+                            SettingsScreen(
+                                settings = settings,
+                                onThemeModeChanged = viewModel::setThemeMode,
+                                onTerminalFullScreenChanged = viewModel::setTerminalFullScreen,
+                                onEditorFontSizeChanged = viewModel::setEditorFontSize,
+                                onTerminalFontSizeChanged = viewModel::setTerminalFontSize,
+                                onTabWidthChanged = viewModel::setTabWidth,
+                                onWordWrapChanged = viewModel::setWordWrap,
+                                onShowLineNumbersChanged = viewModel::setShowLineNumbers,
+                                onAutoSaveOnRunChanged = viewModel::setAutoSaveOnRun,
+                                onCustomPipIndexChanged = viewModel::setCustomPipIndexUrl
+                            )
+                        }
                     }
                 }
-            }
 
-            // Interactive Terminal Emulator & REPL Dock
-            AnimatedVisibility(
-                visible = isTerminalExpanded && selectedTab == NavTab.EDITOR,
-                enter = expandVertically(),
-                exit = shrinkVertically()
-            ) {
-                TerminalConsoleSheet(
-                    snapshot = terminalSnapshot,
-                    fontSizeSp = settings.terminalFontSizeSp,
-                    isReplMode = isReplMode,
-                    replContinuation = replContinuation,
-                    onToggleReplMode = viewModel::setReplMode,
-                    onResetRepl = viewModel::resetReplSession,
-                    onSubmitInput = viewModel::submitTerminalInput,
-                    onJumpToLine = viewModel::requestJumpToLine,
-                    onStopScript = viewModel::stopRunningScript,
-                    onRerunScript = viewModel::runCurrentScript,
-                    onClearTerminal = viewModel::clearTerminal,
-                    onCloseSheet = { viewModel.setTerminalExpanded(false) },
-                    modifier = Modifier.height(275.dp)
-                )
+                // Bottom Split-Screen Terminal Dock (Only when terminalFullScreen == false)
+                AnimatedVisibility(
+                    visible = isTerminalExpanded && !settings.terminalFullScreen && selectedTab == NavTab.EDITOR,
+                    enter = expandVertically(),
+                    exit = shrinkVertically()
+                ) {
+                    TerminalConsoleSheet(
+                        snapshot = terminalSnapshot,
+                        fontSizeSp = settings.terminalFontSizeSp,
+                        isFullScreen = false,
+                        isReplMode = isReplMode,
+                        replContinuation = replContinuation,
+                        onToggleFullScreen = viewModel::setTerminalFullScreen,
+                        onToggleReplMode = viewModel::setReplMode,
+                        onResetRepl = viewModel::resetReplSession,
+                        onSubmitInput = viewModel::submitTerminalInput,
+                        onJumpToLine = viewModel::requestJumpToLine,
+                        onStopScript = viewModel::stopRunningScript,
+                        onRerunScript = viewModel::runCurrentScript,
+                        onClearTerminal = viewModel::clearTerminal,
+                        onCloseSheet = { viewModel.setTerminalExpanded(false) },
+                        modifier = Modifier.height(275.dp)
+                    )
+                }
             }
         }
     }

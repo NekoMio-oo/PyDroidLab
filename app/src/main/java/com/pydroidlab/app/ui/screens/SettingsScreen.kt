@@ -1,6 +1,10 @@
 package com.pydroidlab.app.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,10 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,9 +26,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pydroidlab.app.data.AppSettings
 import com.pydroidlab.app.data.ThemeMode
 import kotlin.math.roundToInt
@@ -33,6 +41,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     settings: AppSettings,
     onThemeModeChanged: (ThemeMode) -> Unit,
+    onTerminalFullScreenChanged: (Boolean) -> Unit,
     onEditorFontSizeChanged: (Float) -> Unit,
     onTerminalFontSizeChanged: (Float) -> Unit,
     onTabWidthChanged: (Int) -> Unit,
@@ -46,7 +55,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = "编辑器与运行环境设置",
@@ -54,7 +63,7 @@ fun SettingsScreen(
             fontWeight = FontWeight.Bold
         )
 
-        // 1. Theme Mode Card
+        // 1. Theme & Terminal Display Mode Card (Compact, equal-width buttons that never clip or stretch vertically)
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -62,25 +71,57 @@ fun SettingsScreen(
             )
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "外观主题 (Theme)",
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold
                 )
+
+                // 3 equal-width buttons: 跟随系统 | 浅色模式 | 深色模式
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     ThemeMode.entries.forEach { mode ->
-                        FilterChip(
+                        SegmentedOptionButton(
+                            label = mode.label,
                             selected = settings.themeMode == mode,
                             onClick = { onThemeModeChanged(mode) },
-                            label = { Text(mode.label) }
+                            modifier = Modifier.weight(1f)
                         )
                     }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
+                Text(
+                    text = "运行终端显示方式 (Terminal Mode)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // 2 equal-width buttons: 全屏终端 (默认) | 底部分屏抽屉
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    SegmentedOptionButton(
+                        label = "全屏终端 (默认)",
+                        selected = settings.terminalFullScreen,
+                        onClick = { onTerminalFullScreenChanged(true) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    SegmentedOptionButton(
+                        label = "底部分屏半屏",
+                        selected = !settings.terminalFullScreen,
+                        onClick = { onTerminalFullScreenChanged(false) },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
@@ -93,8 +134,10 @@ fun SettingsScreen(
             )
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     text = "排版与缩进 (Typography & Indentation)",
@@ -144,21 +187,23 @@ fun SettingsScreen(
                     )
                 }
 
-                // Tab Width
+                // Tab Width (Placed cleanly on its own row with 3 equal-width buttons so 8 空格 is never squished!)
+                Text(
+                    text = "Tab 缩进宽度 (Spaces)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Tab 缩进宽度 (Spaces)", style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf(2, 4, 8).forEach { width ->
-                            FilterChip(
-                                selected = settings.tabWidth == width,
-                                onClick = { onTabWidthChanged(width) },
-                                label = { Text("$width 空格") }
-                            )
-                        }
+                    listOf(2, 4, 8).forEach { width ->
+                        SegmentedOptionButton(
+                            label = "$width 空格",
+                            selected = settings.tabWidth == width,
+                            onClick = { onTabWidthChanged(width) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -172,7 +217,9 @@ fun SettingsScreen(
             )
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
@@ -216,7 +263,9 @@ fun SettingsScreen(
             )
         ) {
             Column(
-                modifier = Modifier.padding(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
@@ -240,6 +289,51 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun SegmentedOptionButton(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bgColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surface
+    }
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    val borderColor = if (selected) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .height(38.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp)
+    ) {
+        Text(
+            text = label,
+            color = contentColor,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

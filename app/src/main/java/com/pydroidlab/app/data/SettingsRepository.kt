@@ -15,13 +15,14 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pydroidlab_settings")
 
 enum class ThemeMode(val label: String) {
-    SYSTEM("跟随系统 (Follow System)"),
-    LIGHT("浅色模式 (Light)"),
-    DARK("深色模式 (Dark)")
+    SYSTEM("跟随系统"),
+    LIGHT("浅色模式"),
+    DARK("深色模式")
 }
 
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val terminalFullScreen: Boolean = true,
     val editorFontSizeSp: Float = 15f,
     val terminalFontSizeSp: Float = 13f,
     val tabWidth: Int = 4,
@@ -35,6 +36,7 @@ class SettingsRepository(private val context: Context) {
 
     private object Keys {
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val TERMINAL_FULL_SCREEN = booleanPreferencesKey("terminal_full_screen")
         val EDITOR_FONT_SIZE = floatPreferencesKey("editor_font_size")
         val TERMINAL_FONT_SIZE = floatPreferencesKey("terminal_font_size")
         val TAB_WIDTH = intPreferencesKey("tab_width")
@@ -49,6 +51,7 @@ class SettingsRepository(private val context: Context) {
         val theme = runCatching { ThemeMode.valueOf(themeStr) }.getOrDefault(ThemeMode.SYSTEM)
         AppSettings(
             themeMode = theme,
+            terminalFullScreen = prefs[Keys.TERMINAL_FULL_SCREEN] ?: true,
             editorFontSizeSp = (prefs[Keys.EDITOR_FONT_SIZE] ?: 15f).coerceIn(10f, 28f),
             terminalFontSizeSp = (prefs[Keys.TERMINAL_FONT_SIZE] ?: 13f).coerceIn(10f, 24f),
             tabWidth = (prefs[Keys.TAB_WIDTH] ?: 4).let { if (it in listOf(2, 4, 8)) it else 4 },
@@ -61,6 +64,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setThemeMode(mode: ThemeMode) {
         context.dataStore.edit { it[Keys.THEME_MODE] = mode.name }
+    }
+
+    suspend fun setTerminalFullScreen(fullScreen: Boolean) {
+        context.dataStore.edit { it[Keys.TERMINAL_FULL_SCREEN] = fullScreen }
     }
 
     suspend fun setEditorFontSize(sizeSp: Float) {

@@ -26,7 +26,11 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -85,8 +89,10 @@ private val TRACEBACK_LINE_REGEX = Regex("""\bline\s+(\d+)\b""", RegexOption.IGN
 fun TerminalConsoleSheet(
     snapshot: TerminalSnapshot,
     fontSizeSp: Float,
+    isFullScreen: Boolean,
     isReplMode: Boolean,
     replContinuation: Boolean,
+    onToggleFullScreen: (Boolean) -> Unit,
     onToggleReplMode: (Boolean) -> Unit,
     onResetRepl: () -> Unit,
     onSubmitInput: (String) -> Unit,
@@ -107,6 +113,10 @@ fun TerminalConsoleSheet(
     val interactionSource = remember { MutableInteractionSource() }
 
     val isInteractiveLineVisible = snapshot.isRunning || isReplMode
+
+    BackHandler(enabled = isFullScreen) {
+        onCloseSheet()
+    }
 
     fun commitLine(rawLine: String) {
         val cleaned = rawLine.replace("\r", "")
@@ -151,6 +161,29 @@ fun TerminalConsoleSheet(
                     .padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (isFullScreen) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onCloseSheet() }
+                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp)
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回编辑器",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "代码",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .size(8.dp)
@@ -236,6 +269,18 @@ fun TerminalConsoleSheet(
                             modifier = Modifier.size(16.dp)
                         )
                     }
+                }
+
+                IconButton(
+                    onClick = { onToggleFullScreen(!isFullScreen) },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                        contentDescription = if (isFullScreen) "切换为底部分屏" else "切换为全屏终端",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(18.dp)
+                    )
                 }
 
                 IconButton(onClick = onClearTerminal, modifier = Modifier.size(28.dp)) {

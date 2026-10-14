@@ -319,6 +319,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun requestJumpToLine(oneBasedLine: Int) {
         val targetZeroBased = (oneBasedLine - 1).coerceAtLeast(0)
+        if (settings.value.terminalFullScreen) {
+            _isTerminalExpanded.value = false
+        }
         _selectedTab.value = NavTab.EDITOR
         _editorState.value = _editorState.value.copy(
             jumpToLineRequest = targetZeroBased to System.currentTimeMillis()
@@ -744,6 +747,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { settingsRepository.setThemeMode(mode) }
+    }
+
+    fun setTerminalFullScreen(fullScreen: Boolean) {
+        viewModelScope.launch { settingsRepository.setTerminalFullScreen(fullScreen) }
     }
 
     fun setEditorFontSize(sizeSp: Float) {
