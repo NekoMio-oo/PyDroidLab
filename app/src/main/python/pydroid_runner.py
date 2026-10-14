@@ -389,3 +389,244 @@ def get_runtime_diagnostics(workspace_dir: str, user_site_packages: str, invalid
         "loaded_modules_count": len(sys.modules)
     }
     return json.dumps(info, ensure_ascii=False)
+
+
+def format_python_code(source_code: str, tab_width: int = 4) -> dict:
+    """
+    Formats Python source code according to PEP 8 conventions:
+    1. If `autopep8` is installed in user site-packages, uses `autopep8.fix_code`.
+    2. Otherwise, uses a built-in `tokenize`-aware PEP 8 formatter that:
+       - Normalizes indentation levels (including tabs and irregular 1/2/3/5-space indents)
+         to clean multiples of `tab_width` spaces while respecting multiline strings and bracket continuation.
+       - Normalizes spacing around commas (`, `) and comments (`  # `).
+       - Strips trailing whitespace on every line and collapses >2 consecutive blank lines.
+    """
+    if not source_code or not source_code.strip():
+        return {"success": True, "formatted": source_code, "changed": False}
+
+    # Try autopep8 first if user installed it via pip
+    try:
+        import autopep8
+        fixed = autopep8.fix_code(
+            source_code,
+            options={"indent_size": int(tab_width), "max_line_length": 100}
+        )
+        return {
+            "success": True,
+            "formatted": fixed,
+            "changed": fixed != source_code
+        }
+    except Exception:
+        pass
+
+    import tokenize
+
+    # Step 1: Collect line indices that are inside multiline strings so we never alter their indentation
+    multiline_string_lines = set()
+    indent_levels_by_line = {}
+    bracket_depth_by_line = {}
+
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(source_code).readline))
+        cur_indent = 0
+        cur_bracket = 0
+        for tok in tokens:
+            ttype, tstr, start, end, _ = tok
+            sline, scol = start
+            eline, ecol = end
+
+            if sline not in indent_levels_by_line:
+                indent_levels_by_line[sline] = cur_indent
+                bracket_depth_by_line[sline] = cur_bracket
+
+            if ttype == tokenize.INDENT:
+                cur_indent += 1
+                indent_levels_by_line[sline] = cur_indent
+            elif ttype == tokenize.DEDENT:
+                cur_indent = max(0, cur_indent - 1)
+                indent_levels_by_line[sline] = cur_indent
+            elif ttype == tokenize.OP:
+                if tstr in ("(", "[", "{"):
+                    cur_bracket += 1
+                elif tstr in (")", "]", "}"):
+                    cur_bracket = max(0, cur_bracket - 1)
+            elif ttype == tokenize.STRING and eline > sline:
+                for ln in range(sline + 1, eline + 1):
+                    multiline_string_lines.add(ln)
+    except tokenize.TokenError:
+        # If code has unclosed brackets/strings, fall back to safe line-by-line tab/trailing-space cleanup
+        pass
+
+    raw_lines = source_code.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    formatted_lines = []
+    blank_streak = 0
+    unit = " " * max(2, int(tab_width))
+
+    # Track heuristic indentation for fallback or unparsed lines
+    heuristic_level = 0
+    prev_ended_with_colon = False
+
+    for idx, raw_line in enumerate(raw_lines, start=1):
+        if idx in multiline_string_lines:
+            formatted_lines.append(raw_line)
+            blank_streak = 0
+            continue
+
+        stripped = raw_line.strip()
+        if not stripped:
+            blank_streak += 1
+            if blank_streak <= 2:
+                formatted_lines.append("")
+            continue
+
+        blank_streak = 0
+
+        # Determine target indentation level
+        if idx in indent_levels_by_line:
+            lvl = indent_levels_by_line[idx]
+            b_depth = bracket_depth_by_line.get(idx, 0)
+            if b_depth > 0:
+                if stripped[0] in (")", "]", "}"):
+                    indent_str = unit * (lvl + max(0, b_depth - 1))
+                else:
+                    indent_str = unit * (lvl + b_depth)
+            else:
+                indent_str = unit * lvl
+        else:
+            # Heuristic fallback if tokenize stopped early due to syntax error
+            expanded = raw_line.expandtabs(int(tab_width))
+            leading_spaces = len(expanded) - len(expanded.lstrip(" "))
+            if prev_ended_with_colon and leading_spaces > 0:
+                heuristic_level += 1
+            elif leading_spaces == 0:
+                heuristic_level = 0
+            else:
+                heuristic_level = max(1, round(leading_spaces / float(tab_width)))
+            if stripped.startswith(("elif ", "else:", "except", "finally:")):
+                heuristic_level = max(0, heuristic_level - 1)
+            indent_str = unit * heuristic_level
+
+        # Clean inline spacing outside strings/comments on this line
+        cleaned_body = _format_single_line_tokens(stripped)
+        formatted_lines.append(indent_str + cleaned_body)
+
+        code_no_comment = stripped.split("#", 1)[0].rstrip()
+        prev_ended_with_colon = code_no_comment.endswith(":")
+
+    # Remove leading/trailing blank lines and add single EOF newline
+    while formatted_lines and formatted_lines[0] == "":
+        formatted_lines.pop(0)
+    while formatted_lines and formatted_lines[-1] == "":
+        formatted_lines.pop()
+
+    result = "\n".join(formatted_lines) + "\n"
+    return {
+        "success": True,
+        "formatted": result,
+        "changed": result != source_code
+    }
+
+
+def _format_single_line_tokens(stripped_line: str) -> str:
+    # Formats spacing around commas, binary/assignment operators at top-level bracket depth,
+    # redundant internal whitespace, and inline `#` comments on a single stripped line.
+    out = []
+    i = 0
+    n = len(stripped_line)
+    in_quote = None
+    bracket_depth = 0
+
+    while i < n:
+        ch = stripped_line[i]
+        if in_quote is not None:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(stripped_line[i + 1])
+                i += 2
+                continue
+            if ch == in_quote:
+                in_quote = None
+            i += 1
+            continue
+
+        if ch in ("\"", "\x27"):
+            if i + 2 < n and stripped_line[i:i+3] == ch * 3:
+                end_q = stripped_line.find(ch * 3, i + 3)
+                if end_q != -1:
+                    out.append(stripped_line[i:end_q+3])
+                    i = end_q + 3
+                    continue
+                else:
+                    out.append(stripped_line[i:])
+                    break
+            in_quote = ch
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "#":
+            comment_body = stripped_line[i+1:].strip()
+            while out and out[-1] == " ":
+                out.pop()
+            if out:
+                out.append("  ")
+            if comment_body and not comment_body.startswith(("!", "#")):
+                out.append(f"# {comment_body}")
+            else:
+                out.append(stripped_line[i:])
+            break
+
+        if ch in ("(", "[", "{"):
+            bracket_depth += 1
+            out.append(ch)
+            i += 1
+            continue
+        elif ch in (")", "]", "}"):
+            bracket_depth = max(0, bracket_depth - 1)
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch in (" ", "\t"):
+            if out and out[-1] != " ":
+                out.append(" ")
+            i += 1
+            continue
+
+        if ch == ",":
+            while out and out[-1] == " ":
+                out.pop()
+            out.append(",")
+            if i + 1 < n and stripped_line[i + 1] not in (" ", ")", "]", "}"):
+                out.append(" ")
+            i += 1
+            continue
+
+        if i + 1 < n and stripped_line[i:i+2] in ("==", "!=", "<=", ">=", "+=", "-=", "*=", "/="):
+            op2 = stripped_line[i:i+2]
+            if out and out[-1] != " ":
+                out.append(" ")
+            out.append(op2)
+            out.append(" ")
+            i += 2
+            while i < n and stripped_line[i] == " ":
+                i += 1
+            continue
+
+        if bracket_depth == 0 and ch in ("=", "<", ">"):
+            prev_ch = stripped_line[i - 1] if i > 0 else ""
+            next_ch = stripped_line[i + 1] if i + 1 < n else ""
+            if prev_ch not in ("=", "!", "<", ">", "+", "-", "*", "/") and next_ch not in ("=", "<", ">"):
+                if out and out[-1] != " ":
+                    out.append(" ")
+                out.append(ch)
+                out.append(" ")
+                i += 1
+                while i < n and stripped_line[i] == " ":
+                    i += 1
+                continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out).rstrip()

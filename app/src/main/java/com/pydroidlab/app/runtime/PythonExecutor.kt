@@ -336,4 +336,18 @@ class PythonExecutor(
             PipOperationResult(false, e.localizedMessage ?: "Unknown uninstall error")
         }
     }
+
+    /**
+     * Formats Python source code (PEP 8 indentation, operator/comma spacing, blank lines)
+     * via `pydroid_runner.format_python_code`.
+     */
+    suspend fun formatPythonCode(code: String, tabWidth: Int): String = withContext(Dispatchers.IO) {
+        runCatching {
+            val py = Python.getInstance()
+            val runnerModule = py.getModule("pydroid_runner")
+            val res = runnerModule.callAttr("format_python_code", code, tabWidth).asMap()
+            res[py.builtins.callAttr("str", "formatted")]?.toString() ?: code
+        }.getOrDefault(code)
+    }
+
 }

@@ -21,16 +21,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -104,10 +109,12 @@ fun CodeEditorScreen(
     editorState: EditorUiState,
     settings: AppSettings,
     isRunning: Boolean,
+    onOpenDrawer: () -> Unit,
     onSelectTab: (String) -> Unit,
     onCloseTab: (String) -> Unit,
     onTextChanged: (String, Int, Int, Boolean, Boolean) -> Unit,
     onCursorChanged: (Int, Int, Boolean, Boolean) -> Unit,
+    onFormatCode: ((String) -> Unit) -> Unit,
     onRunClicked: () -> Unit,
     onStopClicked: () -> Unit,
     onSaveClicked: () -> Unit,
@@ -132,6 +139,24 @@ fun CodeEditorScreen(
     var showSaveAsDialog by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showOutlineAndContextSheet by remember { mutableStateOf(false) }
+
+    // Apply Undoable code formatting into Sora CodeEditor
+    val triggerFormat = {
+        onFormatCode { formattedText ->
+            val editor = editorRef ?: return@onFormatCode
+            runCatching {
+                val curLine = editor.cursor.leftLine
+                val curCol = editor.cursor.leftColumn
+                val lastLine = (editor.text.lineCount - 1).coerceAtLeast(0)
+                val lastCol = editor.text.getColumnCount(lastLine)
+                // Using editor.text.replace preserves Undo/Redo stack!
+                editor.text.replace(0, 0, lastLine, lastCol, formattedText)
+                val targetLine = curLine.coerceIn(0, (editor.text.lineCount - 1).coerceAtLeast(0))
+                val targetCol = curCol.coerceIn(0, editor.text.getColumnCount(targetLine))
+                editor.setSelection(targetLine, targetCol)
+            }
+        }
+    }
 
     // Synchronize external file loads, tab switches, or sample loads into the Sora CodeEditor instance
     LaunchedEffect(editorState.contentVersion, editorRef) {
@@ -209,51 +234,41 @@ fun CodeEditorScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 1. Sleek, fixed-height (48.dp) Single-Line Top Toolbar
+        // 1. TinaIDE-style Sleek Top App Bar (46.dp) with Left Drawer Button (`☰`) + Title + Core Actions
         Surface(
             tonalElevation = 2.dp,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(46.dp)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = 12.dp, end = 6.dp),
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Active file title + clickable TinaIDE-style runtime status pill
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clickable {
-                            onRefreshRuntimeDiagnostics(false)
-                            showOutlineAndContextSheet = true
-                        }
-                        .padding(end = 4.dp),
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = editorState.fileName + if (editorState.isModified) " *" else "",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "Ln ${editorState.cursorLine + 1}:${editorState.cursorColumn + 1} • Py${editorState.runtimeContextInfo.pythonVersion}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Clip
-                    )
-                }
+                // Left Drawer Toggle (`☰` opens TinaIDE Workspace & Navigation Drawer)
+                CompactToolbarIconButton(
+                    icon = Icons.Default.Menu,
+                    contentDescription = "打开工作区抽屉与功能菜单",
+                    onClick = onOpenDrawer
+                )
 
-                // Right: Compact 34.dp action buttons
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Active file title
+                Text(
+                    text = editorState.fileName + if (editorState.isModified) " *" else "",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Core Editor Actions: Undo, Redo, Format (✨), Save, Terminal, Run, More (⋮)
                 CompactToolbarIconButton(
                     icon = Icons.AutoMirrored.Filled.Undo,
                     contentDescription = "撤销",
@@ -269,18 +284,9 @@ fun CodeEditorScreen(
                 )
 
                 CompactToolbarIconButton(
-                    icon = Icons.AutoMirrored.Filled.FormatListBulleted,
-                    contentDescription = "代码大纲与运行上下文诊断",
-                    onClick = {
-                        onRefreshRuntimeDiagnostics(false)
-                        showOutlineAndContextSheet = true
-                    }
-                )
-
-                CompactToolbarIconButton(
-                    icon = Icons.Default.Search,
-                    contentDescription = "查找与替换",
-                    onClick = onToggleFindReplace
+                    icon = Icons.Default.AutoFixHigh,
+                    contentDescription = "PEP 8 格式化代码",
+                    onClick = triggerFormat
                 )
 
                 CompactToolbarIconButton(
@@ -291,16 +297,16 @@ fun CodeEditorScreen(
 
                 CompactToolbarIconButton(
                     icon = Icons.Default.Terminal,
-                    contentDescription = "终端控制台",
+                    contentDescription = "打开终端",
                     onClick = onToggleTerminal
                 )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(3.dp))
 
                 if (isRunning) {
                     FilledIconButton(
                         onClick = onStopClicked,
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.size(32.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.error
                         )
@@ -308,13 +314,13 @@ fun CodeEditorScreen(
                         Icon(
                             Icons.Default.Stop,
                             contentDescription = "停止运行",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 } else {
                     FilledIconButton(
                         onClick = onRunClicked,
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.size(32.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
@@ -322,7 +328,7 @@ fun CodeEditorScreen(
                         Icon(
                             Icons.Default.PlayArrow,
                             contentDescription = "运行脚本",
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
@@ -330,13 +336,39 @@ fun CodeEditorScreen(
                 Box {
                     CompactToolbarIconButton(
                         icon = Icons.Default.MoreVert,
-                        contentDescription = "更多操作",
+                        contentDescription = "更多功能",
                         onClick = { showOverflowMenu = true }
                     )
                     DropdownMenu(
                         expanded = showOverflowMenu,
                         onDismissRequest = { showOverflowMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("格式化代码 (PEP 8 Format)") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatAlignLeft, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                triggerFormat()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("查找与替换 (Find & Replace)") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onToggleFindReplace()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("代码大纲与编译环境诊断") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = null) },
+                            onClick = {
+                                showOverflowMenu = false
+                                onRefreshRuntimeDiagnostics(false)
+                                showOutlineAndContextSheet = true
+                            }
+                        )
+                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("新建脚本 (New .py)") },
                             leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
@@ -353,68 +385,21 @@ fun CodeEditorScreen(
                                 showSaveAsDialog = true
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("代码大纲与环境诊断") },
-                            leadingIcon = { Icon(Icons.Default.BugReport, contentDescription = null) },
-                            onClick = {
-                                showOverflowMenu = false
-                                onRefreshRuntimeDiagnostics(false)
-                                showOutlineAndContextSheet = true
-                            }
-                        )
                     }
                 }
             }
         }
 
-        // 2. TinaIDE-inspired Multi-Tab Bar (32.dp slim horizontal tab strip)
-        if (editorState.openTabs.size > 1) {
-            MultiTabStrip(
-                tabs = editorState.openTabs,
-                activeTabId = editorState.activeTabId,
-                onSelectTab = onSelectTab,
-                onCloseTab = onCloseTab
-            )
-        }
+        // 2. Always-Visible TinaIDE Multi-Tab Strip (32.dp) with `+` quick new script button
+        MultiTabStrip(
+            tabs = editorState.openTabs,
+            activeTabId = editorState.activeTabId,
+            onSelectTab = onSelectTab,
+            onCloseTab = onCloseTab,
+            onNewTab = { showNewFileDialog = true }
+        )
 
-        // 3. Real-time AST Syntax Error Pill (if `ast.parse` detected a SyntaxError/IndentationError)
-        val firstDiag = editorState.syntaxDiagnostics.firstOrNull()
-        AnimatedVisibility(visible = firstDiag != null) {
-            if (firstDiag != null) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background( Color(0xFF7F1D1D) )
-                        .clickable {
-                            val targetLine = (firstDiag.line - 1).coerceAtLeast(0)
-                            runCatching {
-                                editorRef?.setSelection(targetLine, (firstDiag.column - 1).coerceAtLeast(0))
-                                editorRef?.ensureSelectionVisible()
-                            }
-                        }
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = Color(0xFFFCA5A5),
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Ln ${firstDiag.line}: ${firstDiag.message} (点击定位)",
-                        color = Color(0xFFFECACA),
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        // 4. Collapsible Find & Replace Toolbar
+        // 3. Collapsible Find & Replace Toolbar
         AnimatedVisibility(visible = editorState.showFindReplaceBar) {
             FindReplaceToolbar(
                 findQuery = editorState.findQuery,
@@ -455,7 +440,7 @@ fun CodeEditorScreen(
 
         HorizontalDivider()
 
-        // 5. Rosemoe Sora CodeEditor View
+        // 4. Rosemoe Sora CodeEditor View (Occupies full immersive workspace height!)
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -527,14 +512,36 @@ fun CodeEditorScreen(
             )
         }
 
-        // 6. Slim 38.dp Quick Symbol Input Bar
+        // 5. TinaIDE-style Compact Bottom Status & Context Bar (24.dp)
+        TinaIdeBottomStatusBar(
+            pythonVersion = editorState.runtimeContextInfo.pythonVersion,
+            tabWidth = settings.tabWidth,
+            cursorLine = editorState.cursorLine + 1,
+            cursorCol = editorState.cursorColumn + 1,
+            outlineCount = editorState.outlineSymbols.size,
+            firstDiagnostic = editorState.syntaxDiagnostics.firstOrNull(),
+            onClickStatusOrOutline = {
+                onRefreshRuntimeDiagnostics(false)
+                showOutlineAndContextSheet = true
+            },
+            onClickDiagnostic = { diag ->
+                val targetLine = (diag.line - 1).coerceAtLeast(0)
+                runCatching {
+                    editorRef?.setSelection(targetLine, (diag.column - 1).coerceAtLeast(0))
+                    editorRef?.ensureSelectionVisible()
+                }
+            }
+        )
+
+        // 6. Slim 36.dp Quick Symbol Input Bar
         QuickSymbolBar(
             tabWidth = settings.tabWidth,
             onInsertSymbol = { sym, cursorOffset ->
                 val editor = editorRef ?: return@QuickSymbolBar
                 editor.insertText(sym, cursorOffset)
                 editor.requestFocus()
-            }
+            },
+            onFormatQuick = triggerFormat
         )
     }
 
@@ -599,7 +606,8 @@ private fun MultiTabStrip(
     tabs: List<EditorTabItem>,
     activeTabId: String,
     onSelectTab: (String) -> Unit,
-    onCloseTab: (String) -> Unit
+    onCloseTab: (String) -> Unit,
+    onNewTab: () -> Unit
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -627,27 +635,150 @@ private fun MultiTabStrip(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(start = 10.dp, end = 4.dp)
+                        modifier = Modifier.padding(start = 10.dp, end = 6.dp)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = when {
+                                        tab.isModified -> Color(0xFFFACC15)
+                                        isSelected -> MaterialTheme.colorScheme.primary
+                                        else -> Color.Transparent
+                                    },
+                                    shape = CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = tab.title + if (tab.isModified) " •" else "",
+                            text = tab.title,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭标签",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clickable { onCloseTab(tab.id) }
-                        )
+                        if (tabs.size > 1) {
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭标签",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .size(13.dp)
+                                    .clickable { onCloseTab(tab.id) }
+                            )
+                        }
                     }
                 }
             }
+
+            IconButton(
+                onClick = onNewTab,
+                modifier = Modifier.size(26.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "新建脚本标签",
+                    modifier = Modifier.size(15.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TinaIdeBottomStatusBar(
+    pythonVersion: String,
+    tabWidth: Int,
+    cursorLine: Int,
+    cursorCol: Int,
+    outlineCount: Int,
+    firstDiagnostic: AstSyntaxDiagnostic?,
+    onClickStatusOrOutline: () -> Unit,
+    onClickDiagnostic: (AstSyntaxDiagnostic) -> Unit
+) {
+    val bgColor = if (firstDiagnostic != null) {
+        Color(0xFF7F1D1D)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    }
+    val fgColor = if (firstDiagnostic != null) {
+        Color(0xFFFECACA)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        color = bgColor,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (firstDiagnostic != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onClickDiagnostic(firstDiagnostic) }
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFFCA5A5),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Ln ${firstDiagnostic.line}: ${firstDiagnostic.message}",
+                        color = fgColor,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            } else {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onClickStatusOrOutline() }
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = Color(0xFF22C55E),
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Python $pythonVersion • UTF-8 • Spaces: $tabWidth",
+                        color = fgColor,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            Text(
+                text = "Ln $cursorLine, Col $cursorCol  |  大纲($outlineCount) ▴",
+                color = fgColor,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 10.sp,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.clickable { onClickStatusOrOutline() }
+            )
         }
     }
 }
@@ -761,7 +892,6 @@ private fun OutlineAndContextSheetContent(
                 }
             }
         } else {
-            // Section 1: TinaIDE-style Runtime Context Diagnostics
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxSize()
@@ -942,7 +1072,8 @@ private fun FindReplaceToolbar(
 @Composable
 private fun QuickSymbolBar(
     tabWidth: Int,
-    onInsertSymbol: (String, Int) -> Unit
+    onInsertSymbol: (String, Int) -> Unit,
+    onFormatQuick: () -> Unit
 ) {
     val symbols = listOf(
         "Tab" to (" ".repeat(tabWidth) to tabWidth),
@@ -969,22 +1100,40 @@ private fun QuickSymbolBar(
         tonalElevation = 3.dp,
         modifier = Modifier
             .fillMaxWidth()
-            .height(38.dp)
+            .height(36.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .padding(horizontal = 6.dp, vertical = 3.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp)
         ) {
+            // Quick Format Pill right at the start of the symbol bar
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .height(26.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable { onFormatQuick() }
+                    .padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = "✨ 格式化",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+
             symbols.forEach { (label, pair) ->
                 val (insertText, offset) = pair
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .height(28.dp)
+                        .height(26.dp)
                         .clip(RoundedCornerShape(6.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f))
                         .clickable { onInsertSymbol(insertText, offset) }

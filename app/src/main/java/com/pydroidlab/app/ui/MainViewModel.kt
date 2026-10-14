@@ -393,7 +393,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         isModified = false,
                         cursorLine = 0,
                         cursorColumn = 0,
-                        statusBanner = "已打开 ${file.name}"
+                        statusBanner = null
                     )
                     _selectedTab.value = NavTab.EDITOR
                     scheduleAstAnalysis(content, file.name)
@@ -467,6 +467,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         statusBanner = "另存为失败: ${e.localizedMessage}"
                     )
                 }
+        }
+    }
+
+
+    fun formatCurrentCode(onFormattedResult: (String) -> Unit) {
+        val current = _editorState.value
+        viewModelScope.launch {
+            val formatted = pythonExecutor.formatPythonCode(current.codeContent, settings.value.tabWidth)
+            if (formatted != current.codeContent) {
+                onFormattedResult(formatted)
+                _editorState.value = _editorState.value.copy(
+                    statusBanner = "✨ 代码已按 PEP 8 规范格式化"
+                )
+            } else {
+                _editorState.value = _editorState.value.copy(
+                    statusBanner = "代码格式已符合规范"
+                )
+            }
         }
     }
 
@@ -556,7 +574,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isModified = false,
                 cursorLine = 0,
                 cursorColumn = 0,
-                statusBanner = "已加载示例：${sample.title}"
+                statusBanner = null
             )
             _selectedTab.value = NavTab.EDITOR
             scheduleAstAnalysis(sample.code, sampleFile.name)
